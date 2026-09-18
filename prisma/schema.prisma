@@ -1,5 +1,5 @@
 // LIFE DREAM BIG — Clocking System
-// Prisma schema (SQLite for local dev; Postgres-compatible for Vercel — see README)
+// Prisma schema (PostgreSQL — Supabase)
 // Learn more: https://pris.ly/d/prisma-schema
 
 generator client {
@@ -7,9 +7,16 @@ generator client {
 }
 
 datasource db {
-  // Local dev = SQLite. For Vercel, switch provider to "postgresql" and set DATABASE_URL.
-  provider = "sqlite"
-  url      = env("DATABASE_URL")
+  // Production: Postgres on Supabase (or any other Postgres provider).
+  // `url` is used by the Prisma Client at runtime — should point to the
+  // pooled connection (PgBouncer / transaction mode) so serverless functions
+  // don't exhaust DB connections.
+  // `directUrl` is used by `prisma db push` / `prisma migrate` — should point
+  // to the direct (non-pooled) connection because PgBouncer transaction mode
+  // does not support DDL operations.
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 // =====================================================
