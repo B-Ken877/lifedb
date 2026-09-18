@@ -66,3 +66,4 @@ server.log
 # Allow .env.example to be committed
 !.env.example
 lifedb/
+.dev.pid
