@@ -1,0 +1,202 @@
+// LIFE DREAM BIG — Clocking System
+// Prisma schema (SQLite for local dev; Postgres-compatible for Vercel — see README)
+// Learn more: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  // Local dev = SQLite. For Vercel, switch provider to "postgresql" and set DATABASE_URL.
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// =====================================================
+// Roles
+// =====================================================
+
+model Role {
+  id        String   @id @default(cuid())
+  name      String   @unique // "ADMIN" | "SURVEY_AGENT"
+  users     User[]
+  createdAt DateTime @default(now())
+}
+
+// =====================================================
+// Users (administrators + survey agents)
+// =====================================================
+
+model User {
+  id                 String   @id @default(cuid())
+  email              String   @unique
+  name               String
+  employeeId         String   @unique // company-assigned agent/employee ID
+  username           String   @unique // login identifier
+  // Password hashing: bcrypt (cost 12). Never store plaintext.
+  passwordHash       String
+  // Forces password change on next login. Used for new accounts and admin-initiated resets.
+  mustChangePassword Boolean  @default(false)
+  active             Boolean  @default(true)
+  // Protected accounts cannot be edited, deactivated, rate-changed, or
+  // password-reset by an admin. Used for ownership / break-glass accounts.
+  isProtected        Boolean  @default(false)
+  roleId             String
+  role               Role     @relation(fields: [roleId], references: [id])
+  // Attendance events emitted by this user (agent).
+  attendanceEvents   AttendanceEvent[]
+  // Compensation history (effective-dated hourly rates).
+  compensationRecords CompensationRecord[]
+  // Correction requests submitted by this user.
+  correctionRequestsSubmitted CorrectionRequest[]
+  // Correction requests reviewed/decided by this user (admin).
+  correctionRequestsReviewed CorrectionRequest[] @relation("ReviewedBy")
+  // Audit log entries produced by or targeting this user.
+  auditLogsAsActor  AuditLog[] @relation("AuditActor")
+  auditLogsAsTarget AuditLog[] @relation("AuditTarget")
+  // Sessions (NextAuth JWT-based; this model is reserved for future DB-session strategy).
+  sessions           Session[]
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@index([roleId])
+  @@index([active])
+  @@index([isProtected])
+}
+
+// =====================================================
+// Sessions (reserved — currently using JWT strategy)
+// =====================================================
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expires      DateTime
+  createdAt    DateTime @default(now())
+
+  @@index([userId])
+}
+
+// =====================================================
+// Compensation history (effective-dated hourly rates)
+//
+// This preserves historical payroll correctness: changing today's rate does
+// not retroactively rewrite past calculations. Each event-driven calculation
+// resolves the applicable rate via effectiveDate <= event date.
+// =====================================================
+
+model CompensationRecord {
+  id           String   @id @default(cuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  hourlyRate   Float    // stored as decimal dollars (e.g., 5.00)
+  effectiveDate DateTime // date the rate takes effect (business tz date)
+  note         String?
+  createdBy    String   // admin userId
+  createdAt    DateTime @default(now())
+
+  @@index([userId, effectiveDate])
+}
+
+// =====================================================
+// Attendance event ledger
+//
+// The source of truth. Worked hours, breaks, and earnings are DERIVED from
+// this immutable event stream. There is no manually editable "hoursWorked"
+// field. Corrections add audit metadata; original events are preserved.
+// =====================================================
+
+model AttendanceEvent {
+  id              String   @id @default(cuid())
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // CLOCK_IN | CLOCK_OUT | BREAK_START | BREAK_END
+  eventType       String
+  // Stored in UTC. The business timezone (America/New_York) is applied at read time.
+  timestampUtc    DateTime
+  // The business date (America/New_York) at the moment of the event.
+  // Pre-computed so queries by-day are fast and timezone-correct.
+  businessDate    String // YYYY-MM-DD in America/New_York
+  // Source/device that emitted the event (e.g., "web", "mobile", "admin-correction").
+  source          String   @default("web")
+  // Free-form note attached to the event.
+  note            String?
+  // Correction metadata (if this event was added/edited via admin correction).
+  correctedById   String?
+  correctionReason String?
+  // Audit linkage
+  createdAt       DateTime @default(now())
+
+  @@index([userId, businessDate])
+  @@index([userId, timestampUtc])
+  @@index([eventType, businessDate])
+}
+
+// =====================================================
+// Correction requests
+//
+// Employees report attendance mistakes (forgot clock in, etc.).
+// Admins APPROVE or REJECT. Approved requests produce AttendanceEvent
+// adjustments WITHOUT deleting the original record.
+// =====================================================
+
+model CorrectionRequest {
+  id              String   @id @default(cuid())
+  userId          String   // agent submitting the request
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // Date the request concerns (business tz YYYY-MM-DD).
+  targetDate      String
+  // CLOCK_IN | CLOCK_OUT | BREAK_START | BREAK_END | OTHER
+  requestedChange String
+  // Optional requested time (ISO UTC). May be null for "forgot to clock out" style requests.
+  requestedTime   String?
+  reason          String
+  note            String?
+  // PENDING | APPROVED | REJECTED
+  status          String   @default("PENDING")
+  reviewedById    String?
+  reviewer        User?    @relation("ReviewedBy", fields: [reviewedById], references: [id])
+  reviewNote      String?
+  reviewedAt      DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([userId, status])
+  @@index([status])
+}
+
+// =====================================================
+// Audit log
+//
+// Records every meaningful mutation for compliance.
+// =====================================================
+
+model AuditLog {
+  id           String   @id @default(cuid())
+  actorId      String?
+  actor        User?    @relation("AuditActor", fields: [actorId], references: [id])
+  targetId     String?
+  target       User?    @relation("AuditTarget", fields: [targetId], references: [id])
+  // e.g., EMPLOYEE_CREATED, PASSWORD_RESET, RATE_CHANGED, CORRECTION_APPROVED, ...
+  action       String
+  // JSON snapshot of relevant values: { oldValue, newValue, reason, ... }
+  metadata     String
+  createdAt    DateTime @default(now())
+
+  @@index([actorId])
+  @@index([targetId])
+  @@index([action])
+  @@index([createdAt])
+}
+
+// =====================================================
+// Settings (company-wide; e.g., default hourly rate, expected hours)
+// =====================================================
+
+model Setting {
+  id    String @id @default(cuid())
+  key   String @unique
+  value String
+}

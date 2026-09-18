@@ -1,0 +1,50 @@
+/**
+ * CSV utilities.
+ *
+ * - Escapes values containing commas, quotes, or newlines per RFC 4180.
+ * - Joins rows with \r\n (Excel-friendly).
+ * - Helper to build a Response with proper headers for download.
+ */
+
+import { formatBusinessDate, formatBusinessTime } from '@/lib/timezone'
+
+/** Escapes a value for CSV output. Wraps in quotes if it contains special chars. */
+export function csvEscape(value: string | number | null | undefined): string {
+  if (value === null || value === undefined) return ''
+  const s = String(value)
+  if (/[",\n\r]/.test(s)) {
+    return `"${s.replace(/"/g, '""')}"`
+  }
+  return s
+}
+
+/** Builds a CSV string from an array of rows (each row = array of cells). */
+export function buildCSV(rows: Array<Array<string | number | null | undefined>>): string {
+  return rows.map((row) => row.map(csvEscape).join(',')).join('\r\n')
+}
+
+/** Builds a Response that triggers a CSV download in the browser. */
+export function csvResponse(csv: string, filename: string): Response {
+  // Prepend BOM so Excel reads UTF-8 properly.
+  const body = '\ufeff' + csv
+  return new Response(body, {
+    status: 200,
+    headers: {
+      'Content-Type': 'text/csv; charset=utf-8',
+      'Content-Disposition': `attachment; filename="${filename}"`,
+      'Cache-Control': 'no-store',
+    },
+  })
+}
+
+/** Formats a Date (UTC) as a business-time "h:mm a" string for CSV cells. */
+export function csvTime(utcDate: Date | null): string {
+  if (!utcDate) return ''
+  return formatBusinessTime(utcDate, 'hh:mm a')
+}
+
+/** Formats a Date (UTC) as a business-time "yyyy-MM-dd" string for CSV cells. */
+export function csvDate(utcDate: Date | null): string {
+  if (!utcDate) return ''
+  return formatBusinessDate(utcDate, 'yyyy-MM-dd')
+}
