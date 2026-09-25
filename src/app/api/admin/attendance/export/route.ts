@@ -3,35 +3,33 @@
  *
  * Returns CSV of attendance records for ALL agents in the range:
  * Employee, Employee ID, Date, Clock In, Clock Out, Break, Net Hours, Hourly Rate, Earnings
+ *
+ * Hardening: from/to must be valid YYYY-MM-DD; range capped at 366 days
+ * to prevent self-DoS via enormous ranges.
  */
 
-import { NextResponse } from 'next/server'
 import { requireAdminApi } from '@/lib/session'
 import { db } from '@/lib/db'
 import { buildCSV, csvResponse, csvTime } from '@/lib/csv'
 import { computeDaySummary, getHourlyRateAt } from '@/lib/attendance/engine'
-import { businessDateKey, lastNDays } from '@/lib/timezone'
+import { boundedDateRange } from '@/lib/http'
 
 export async function GET(req: Request) {
   const user = await requireAdminApi()
   if (user instanceof Response) return user
 
   const url = new URL(req.url)
-  let fromStr = url.searchParams.get('from')
-  let toStr = url.searchParams.get('to')
-  if (!fromStr || !toStr) {
-    const keys = lastNDays(30).reverse()
-    fromStr = keys[0]
-    toStr = keys[keys.length - 1]
+  const range = boundedDateRange(
+    url.searchParams.get('from'),
+    url.searchParams.get('to'),
+    { maxSpanDays: 366, defaultDays: 30 }
+  )
+  if ('error' in range) {
+    return csvResponse(`error,${range.error}\n`, 'error.csv', 400)
   }
-  const fromDate = new Date(`${fromStr}T12:00:00Z`)
-  const toDate = new Date(`${toStr}T12:00:00Z`)
-  const keys: string[] = []
-  const cursor = new Date(fromDate)
-  while (cursor <= toDate) {
-    keys.push(businessDateKey(cursor))
-    cursor.setUTCDate(cursor.getUTCDate() + 1)
-  }
+  const { keys } = range
+  const fromStr = url.searchParams.get('from') ?? keys[0]
+  const toStr = url.searchParams.get('to') ?? keys[keys.length - 1]
 
   const agentRole = await db.role.findUnique({ where: { name: 'SURVEY_AGENT' } })
   if (!agentRole) return csvResponse('Employee,Employee ID,Date,Clock In,Clock Out,Break,Net Hours,Hourly Rate,Earnings\n', 'attendance_empty.csv')
@@ -58,6 +56,8 @@ export async function GET(req: Request) {
       const ref = dayEvents.find((e) => e.eventType === 'CLOCK_IN')?.timestampUtc ?? new Date(`${key}T17:00:00Z`)
       const rate = await getHourlyRateAt(u.id, ref)
       const summary = computeDaySummary(dayEvents, key, rate)
+      // Parity with payroll/export: skip days with no net hours worked.
+      if (summary.netHours === 0) continue
       rows.push([
         u.name,
         u.employeeId,

@@ -26,8 +26,25 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     return NextResponse.json({ error: 'Invalid request.' }, { status: 400 })
   }
 
-  const user = await db.user.findUnique({ where: { id } })
+  const user = await db.user.findUnique({ where: { id }, include: { role: true } })
   if (!user) return NextResponse.json({ error: 'Not found.' }, { status: 404 })
+
+  // Cannot deactivate your own admin account (locks the only admin out).
+  if (id === admin.id) {
+    return NextResponse.json(
+      { error: 'You cannot change your own account status.' },
+      { status: 400 }
+    )
+  }
+
+  // Status changes are scoped to SURVEY_AGENT only — admins cannot
+  // deactivate other admins through this endpoint.
+  if (user.role.name === 'ADMIN') {
+    return NextResponse.json(
+      { error: 'This endpoint can only modify agent accounts.' },
+      { status: 403 }
+    )
+  }
 
   // Protected accounts cannot be activated/deactivated by admins.
   if (user.isProtected) {

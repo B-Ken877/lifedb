@@ -1,145 +1,168 @@
 #!/bin/sh
 
+# Lifecycle:
+#   - Starts Next.js standalone server (next-service-dist/server.js)
+#   - Starts all mini-services (mini-services-dist/mini-service-*.js)
+#   - Runs Caddy as the foreground process (PID 1) for TLS termination.
+#
+# Hardening:
+#   - Refuses to start Next.js without a real Postgres DATABASE_URL. The
+#     previous version defaulted to a packaged SQLite file, but the Prisma
+#     schema mandates `provider = "postgresql"` — the first query would
+#     throw `PrismaClientInitializationError: Unknown datasource provider`,
+#     taking down every API route. Failing fast is safer than failing
+#     per-request.
+#   - All child processes are tracked and torn down on SIGTERM/SIGINT with
+#     a 5s grace window before SIGKILL.
+
 set -e
 
-# 获取脚本所在目录
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 BUILD_DIR="$SCRIPT_DIR"
 
-# 存储所有子进程的 PID
 pids=""
-
-# 清理函数：优雅关闭所有服务
 cleanup() {
     echo ""
-    echo "🛑 正在关闭所有服务..."
-    
-    # 发送 SIGTERM 信号给所有子进程
+    echo "🛑 Shutting down all services..."
+
     for pid in $pids; do
         if kill -0 "$pid" 2>/dev/null; then
             service_name=$(ps -p "$pid" -o comm= 2>/dev/null || echo "unknown")
-            echo "   关闭进程 $pid ($service_name)..."
+            echo "   Stopping $pid ($service_name)..."
             kill -TERM "$pid" 2>/dev/null
         fi
     done
-    
-    # 等待所有进程退出（最多等待 5 秒）
+
     sleep 1
     for pid in $pids; do
         if kill -0 "$pid" 2>/dev/null; then
-            # 如果还在运行，等待最多 4 秒
             timeout=4
             while [ $timeout -gt 0 ] && kill -0 "$pid" 2>/dev/null; do
                 sleep 1
                 timeout=$((timeout - 1))
             done
-            # 如果仍然在运行，强制关闭
             if kill -0 "$pid" 2>/dev/null; then
-                echo "   强制关闭进程 $pid..."
+                echo "   Force killing $pid..."
                 kill -KILL "$pid" 2>/dev/null
             fi
         fi
     done
-    
-    echo "✅ 所有服务已关闭"
+
+    echo "✅ All services stopped"
     exit 0
 }
 
-echo "🚀 开始启动所有服务..."
-echo ""
+trap cleanup TERM INT
 
-# 切换到构建目录
+echo "🚀 Starting all services..."
+echo ""
 cd "$BUILD_DIR" || exit 1
 
 ls -lah
 
-DEFAULT_PACKAGED_DB_PATH="/app/db/custom.db"
-DEFAULT_PACKAGED_DATABASE_URL="file:$DEFAULT_PACKAGED_DB_PATH"
-
-# Python 依赖在构建阶段安装进部署产物，不复用 Sandbox 的 /home/z/.venv。
-# Next.js 及其启动的子进程都会继承这组路径。
+# ---------- Python runtime (only if packaged) ----------
 if [ -d "/app/python-runtime/site-packages" ]; then
     export PYTHONPATH="/app/python-runtime/site-packages:/app/next-service-dist${PYTHONPATH:+:$PYTHONPATH}"
     export PATH="/app/python-runtime/site-packages/bin:$PATH"
     export PYTHONDONTWRITEBYTECODE=1
     export PYTHONUNBUFFERED=1
-    echo "🐍 已启用部署包内 Python runtime: $(python --version 2>&1)"
+    echo "🐍 Python runtime enabled: $(python --version 2>&1)"
 fi
 
-# 启动 Next.js 服务器
+# ---------- Next.js server ----------
 if [ -f "./next-service-dist/server.js" ]; then
-    echo "🚀 启动 Next.js 服务器..."
+    echo "🚀 Starting Next.js server..."
     cd next-service-dist/ || exit 1
-    
-    # 设置环境变量
+
     export NODE_ENV=production
     export PORT="${PORT:-3000}"
     export HOSTNAME="${HOSTNAME:-0.0.0.0}"
-    export DATABASE_URL="${DATABASE_URL:-$DEFAULT_PACKAGED_DATABASE_URL}"
 
-    if [ "$DATABASE_URL" = "$DEFAULT_PACKAGED_DATABASE_URL" ]; then
-        if [ ! -f "$DEFAULT_PACKAGED_DB_PATH" ]; then
-            echo "❌ 未找到打包后的数据库文件 $DEFAULT_PACKAGED_DB_PATH"
-            echo "   为避免生产环境启动到空数据库，启动已终止"
+    # Prisma schema mandates provider=postgresql. Refuse to start without
+    # a real Postgres DATABASE_URL — the previous SQLite default caused
+    # `PrismaClientInitializationError` on the first query of every request.
+    case "${DATABASE_URL:-}" in
+        ""|file:*)
+            echo "❌ DATABASE_URL is missing or points to a SQLite file."
+            echo "   prisma/schema.prisma uses provider=\"postgresql\" —"
+            echo "   set DATABASE_URL to a postgres:// connection string."
             exit 1
-        fi
+            ;;
+    esac
 
-        echo "🗄️  当前使用打包数据库: $DEFAULT_PACKAGED_DB_PATH"
-    else
-        echo "🗄️  当前使用外部指定数据库: $DATABASE_URL"
-    fi
-    
-    # 后台启动 Next.js
+    # Same for DIRECT_URL (used by prisma migrate at deploy time, but
+    # included here for completeness so operators see one clear error).
+    case "${DIRECT_URL:-${DATABASE_URL}}" in
+        file:*)
+            echo "❌ DIRECT_URL points to a SQLite file — Postgres is required."
+            exit 1
+            ;;
+    esac
+
+    echo "🗄️  DATABASE_URL: $(echo "$DATABASE_URL" | sed 's#://[^@]*@#://***:***@#')"
+
+    # Raise the heap ceiling so a standalone Next + Prisma process does
+    # not OOM during traffic spikes. 2048m matches the dev/build setting.
+    export NODE_OPTIONS="${NODE_OPTIONS:-} --max-old-space-size=2048"
+
+    # Background Next.js. Do NOT pipe through `tee` — that introduces a
+    # SIGPIPE failure mode where the Next process dies if the consumer
+    # exits. Logs go to stdout/stderr directly.
     bun server.js &
     NEXT_PID=$!
     pids="$NEXT_PID"
-    
-    # 等待一小段时间检查进程是否成功启动
+
     sleep 1
     if ! kill -0 "$NEXT_PID" 2>/dev/null; then
-        echo "❌ Next.js 服务器启动失败"
+        echo "❌ Next.js server failed to start"
         exit 1
-    else
-        echo "✅ Next.js 服务器已启动 (PID: $NEXT_PID, Port: $PORT)"
     fi
-    
+    echo "✅ Next.js started (PID: $NEXT_PID, Port: $PORT)"
+
     cd ../
 else
-    echo "⚠️  未找到 Next.js 服务器文件: ./next-service-dist/server.js"
+    echo "⚠️  ./next-service-dist/server.js not found — skipping Next.js"
 fi
 
-# 启动 mini-services
+# ---------- mini-services ----------
 if [ -f "./mini-services-start.sh" ]; then
-    echo "🚀 启动 mini-services..."
-    
-    # 运行启动脚本（从根目录运行，脚本内部会处理 mini-services-dist 目录）
+    echo "🚀 Starting mini-services..."
     sh ./mini-services-start.sh &
     MINI_PID=$!
     pids="$pids $MINI_PID"
-    
-    # 等待一小段时间检查进程是否成功启动
+
     sleep 1
     if ! kill -0 "$MINI_PID" 2>/dev/null; then
-        echo "⚠️  mini-services 可能启动失败，但继续运行..."
+        echo "⚠️  mini-services may have failed to start — continuing"
     else
-        echo "✅ mini-services 已启动 (PID: $MINI_PID)"
+        echo "✅ mini-services started (PID: $MINI_PID)"
     fi
 elif [ -d "./mini-services-dist" ]; then
-    echo "⚠️  未找到 mini-services 启动脚本，但目录存在"
+    echo "⚠️  mini-services-start.sh missing but directory exists"
 else
-    echo "ℹ️  mini-services 目录不存在，跳过"
+    echo "ℹ️  No mini-services directory — skipping"
 fi
 
-# 启动 Caddy（如果存在 Caddyfile）
-echo "🚀 启动 Caddy..."
-
-# Caddy 作为前台进程运行（主进程）
-echo "✅ Caddy 已启动（前台运行）"
-echo ""
-echo "🎉 所有服务已启动！"
-echo ""
-echo "💡 按 Ctrl+C 停止所有服务"
-echo ""
-
-# Caddy 作为主进程运行
-exec caddy run --config Caddyfile --adapter caddyfile
+# ---------- Caddy (foreground / PID 1) ----------
+if command -v caddy >/dev/null 2>&1 && [ -f "../Caddyfile" ]; then
+    echo "🚀 Starting Caddy (foreground)..."
+    echo ""
+    echo "🎉 All services started"
+    echo "💡 Press Ctrl+C to stop"
+    echo ""
+    exec caddy run --config ../Caddyfile --adapter caddyfile
+elif command -v caddy >/dev/null 2>&1 && [ -f "./Caddyfile" ]; then
+    echo "🚀 Starting Caddy (foreground)..."
+    echo ""
+    echo "🎉 All services started"
+    echo "💡 Press Ctrl+C to stop"
+    echo ""
+    exec caddy run --config ./Caddyfile --adapter caddyfile
+else
+    echo ""
+    echo "🎉 All services started (no Caddy — keeping foreground alive)"
+    echo "💡 Press Ctrl+C to stop"
+    echo ""
+    # No Caddy: keep the script alive so the trap can fire on signals.
+    wait
+fi

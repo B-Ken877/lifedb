@@ -9,35 +9,31 @@
  *
  * Times in Eastern Time (America/New_York).
  * Money is in integer cents (no float error).
+ *
+ * Hardening: from/to are validated, must be YYYY-MM-DD, span capped at 366d
+ * (rejects self-DoS like ?from=1900-01-01&to=2100-01-01).
  */
 
 import { NextResponse } from 'next/server'
 import { requireAdminApi } from '@/lib/session'
 import { db } from '@/lib/db'
 import { computeDaySummary, getHourlyRateAt } from '@/lib/attendance/engine'
-import { businessDateKey, lastNDays } from '@/lib/timezone'
+import { boundedDateRange } from '@/lib/http'
 
 export async function GET(req: Request) {
   const user = await requireAdminApi()
   if (user instanceof Response) return user
 
   const url = new URL(req.url)
-  let fromStr = url.searchParams.get('from')
-  let toStr = url.searchParams.get('to')
-  if (!fromStr || !toStr) {
-    const keys = lastNDays(30).reverse()
-    fromStr = keys[0]
-    toStr = keys[keys.length - 1]
+  const range = boundedDateRange(
+    url.searchParams.get('from'),
+    url.searchParams.get('to'),
+    { maxSpanDays: 366, defaultDays: 30 }
+  )
+  if ('error' in range) {
+    return NextResponse.json({ error: range.error }, { status: range.status })
   }
-
-  const fromDate = new Date(`${fromStr}T12:00:00Z`)
-  const toDate = new Date(`${toStr}T12:00:00Z`)
-  const keys: string[] = []
-  const cursor = new Date(fromDate)
-  while (cursor <= toDate) {
-    keys.push(businessDateKey(cursor))
-    cursor.setUTCDate(cursor.getUTCDate() + 1)
-  }
+  const { keys } = range
 
   const agentRole = await db.role.findUnique({ where: { name: 'SURVEY_AGENT' } })
   if (!agentRole) return NextResponse.json({ rows: [], totalNetHours: 0, totalBreakHours: 0, totalEarningsCents: 0 })
@@ -47,7 +43,17 @@ export async function GET(req: Request) {
     orderBy: { name: 'asc' },
   })
 
-  const rows = []
+  interface PayrollRow {
+    employeeId: string
+    name: string
+    username: string
+    netHours: number
+    breakHours: number
+    earningsCents: number
+    rate: number
+    days: number
+  }
+  const rows: PayrollRow[] = []
   let totalNetHours = 0
   let totalBreakHours = 0
   let totalEarningsCents = 0

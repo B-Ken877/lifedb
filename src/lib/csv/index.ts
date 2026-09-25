@@ -23,15 +23,30 @@ export function buildCSV(rows: Array<Array<string | number | null | undefined>>)
   return rows.map((row) => row.map(csvEscape).join(',')).join('\r\n')
 }
 
-/** Builds a Response that triggers a CSV download in the browser. */
-export function csvResponse(csv: string, filename: string): Response {
+/**
+ * Sanitize a filename for use in a Content-Disposition header. Strips
+ * quotes, control chars, and path separators — defends against header
+ * injection if a future caller interpolates user input.
+ */
+function sanitizeFilename(filename: string): string {
+  // Strip anything that could break out of the quoted-string form.
+  const cleaned = filename.replace(/["\r\n/\\]/g, '_')
+  // Cap length to keep the header well under sane limits.
+  return cleaned.slice(0, 200)
+}
+
+/**
+ * Builds a Response that triggers a CSV download in the browser.
+ * Pass a non-200 status for error CSVs (e.g. validation rejection).
+ */
+export function csvResponse(csv: string, filename: string, status: number = 200): Response {
   // Prepend BOM so Excel reads UTF-8 properly.
   const body = '\ufeff' + csv
   return new Response(body, {
-    status: 200,
+    status,
     headers: {
       'Content-Type': 'text/csv; charset=utf-8',
-      'Content-Disposition': `attachment; filename="${filename}"`,
+      'Content-Disposition': `attachment; filename="${sanitizeFilename(filename)}"`,
       'Cache-Control': 'no-store',
     },
   })

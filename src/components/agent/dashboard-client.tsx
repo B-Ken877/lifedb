@@ -178,8 +178,11 @@ export function AgentDashboardClient({ initial }: { initial: InitialData }) {
   const stateMeta = STATE_META[state]
 
   // Determine which action is the primary (large) one.
-  const primaryAction: EventType | null =
+  // Cast through unknown to prevent TS from narrowing to 'CLOCK_IN'|'CLOCK_OUT'|null
+  // so subsequent equality checks against BREAK_START / BREAK_END stay valid.
+  const primaryAction: EventType | null = (
     state === 'OFFLINE' ? 'CLOCK_IN' : state === 'WORKING' ? 'CLOCK_OUT' : null
+  ) as EventType | null
 
   return (
     <div className="space-y-6">
@@ -380,11 +383,13 @@ export function AgentDashboardClient({ initial }: { initial: InitialData }) {
                     border: '1px solid hsl(var(--border))',
                     fontSize: 12,
                   }}
-                  formatter={(value: number, _name, props) => {
+                  // Recharts' Formatter type is overly strict on the generic
+                  // parameter; cast through unknown to keep our hook ergonomic.
+                  formatter={((value: number, _name: unknown, props: any) => {
                     const cents = props?.payload?.earningsCents ?? 0
                     return [`${value.toFixed(2)}h · ${formatCents(cents)}`, 'Hours']
-                  }}
-                  labelFormatter={(label, payload) => {
+                  }) as any}
+                  labelFormatter={(label: any, payload: any) => {
                     const dateKey = payload?.[0]?.payload?.dateKey
                     return dateKey ? `${label} · ${dateKey}` : label
                   }}

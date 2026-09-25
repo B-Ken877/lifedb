@@ -6,7 +6,7 @@
  */
 
 import { NextResponse } from 'next/server'
-import { z } from 'zod'
+import { z, ZodError } from 'zod'
 import { requireAdminApi } from '@/lib/session'
 import { db } from '@/lib/db'
 import { writeAudit } from '@/lib/audit'
@@ -19,8 +19,9 @@ export async function GET() {
   return NextResponse.json({ defaultHourlyRate: setting?.value ?? '5.00' })
 }
 
+// Reject Infinity / NaN via .finite() and cap at a sane upper bound.
 const Body = z.object({
-  defaultHourlyRate: z.number().min(0),
+  defaultHourlyRate: z.number().min(0).max(10_000).finite(),
 })
 
 export async function POST(req: Request) {
@@ -30,18 +31,21 @@ export async function POST(req: Request) {
   let parsed: z.infer<typeof Body>
   try {
     parsed = Body.parse(await req.json())
-  } catch (e: any) {
+  } catch (e: unknown) {
     return NextResponse.json(
-      { error: e?.issues?.[0]?.message || 'Invalid request.' },
+      { error: e instanceof ZodError ? e.issues[0]?.message : 'Invalid request.' },
       { status: 400 }
     )
   }
 
+  // Store as a fixed 2-decimal string to dodge any future float issues.
+  const newValue = parsed.defaultHourlyRate.toFixed(2)
+
   const old = await db.setting.findUnique({ where: { key: 'default_hourly_rate' } })
   await db.setting.upsert({
     where: { key: 'default_hourly_rate' },
-    update: { value: String(parsed.defaultHourlyRate) },
-    create: { key: 'default_hourly_rate', value: String(parsed.defaultHourlyRate) },
+    update: { value: newValue },
+    create: { key: 'default_hourly_rate', value: newValue },
   })
 
   await writeAudit({
@@ -50,7 +54,7 @@ export async function POST(req: Request) {
     metadata: {
       setting: 'default_hourly_rate',
       oldValue: old?.value ?? null,
-      newValue: String(parsed.defaultHourlyRate),
+      newValue,
     },
   })
 

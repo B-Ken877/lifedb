@@ -244,25 +244,102 @@ export interface AdminEmployeeStatusRow {
 }
 
 export async function getAdminEmployeeStatusRows(): Promise<AdminEmployeeStatusRow[]> {
-  // Get all agents (not admins).
+  // PERFORMANCE: This used to do 3 queries PER agent — for N agents that's
+  // ~3N+1 sequential round-trips. With 500 agents that's 1500+ queries and
+  // the endpoint blows past typical API timeouts.
+  //
+  // New strategy: 3 parallel bulk queries + 1 in-memory join.
+  //   1. All agents (single findMany)
+  //   2. Today's events across all agents (single findMany)
+  //   3. Each agent's most recent event (single raw SQL `DISTINCT ON`)
+  //   4. Current effective rates (single CompensationRecord findMany)
+  //
+  // Total: 4 queries regardless of agent count.
   const agentRole = await db.role.findUnique({ where: { name: 'SURVEY_AGENT' } })
   if (!agentRole) return []
-  const users = await db.user.findMany({
-    where: { roleId: agentRole.id },
-    orderBy: { name: 'asc' },
-  })
+
+  const [users, todayEvents, latestEventsPerUser, rateRecords] = await Promise.all([
+    db.user.findMany({
+      where: { roleId: agentRole.id },
+      orderBy: { name: 'asc' },
+    }),
+    db.attendanceEvent.findMany({
+      where: { businessDate: businessDateKey(new Date()) },
+      orderBy: { timestampUtc: 'asc' },
+    }),
+    // Postgres DISTINCT ON returns one row per userId — the most recent event.
+    // This is the only way to avoid a per-user query for "current state".
+    db.$queryRaw<
+      Array<{ userId: string; eventType: string; timestampUtc: Date; correctedById: string | null }>
+    >`
+      SELECT DISTINCT ON ("userId") "userId", "eventType", "timestampUtc", "correctedById"
+      FROM "AttendanceEvent"
+      WHERE "userId" IN (
+        SELECT u.id FROM "User" u WHERE u."roleId" = ${agentRole.id}
+      )
+      ORDER BY "userId" ASC, "timestampUtc" DESC
+    `,
+    db.compensationRecord.findMany({
+      where: { effectiveDate: { lte: new Date() }, user: { roleId: agentRole.id } },
+      orderBy: [{ userId: 'asc' }, { effectiveDate: 'desc' }],
+    }),
+  ])
 
   const today = businessDateKey(new Date())
-  const rows: AdminEmployeeStatusRow[] = []
+  const todayEventsByUser = new Map<string, typeof todayEvents>()
+  for (const e of todayEvents) {
+    const arr = todayEventsByUser.get(e.userId) ?? []
+    arr.push(e)
+    todayEventsByUser.set(e.userId, arr)
+  }
 
-  for (const u of users) {
-    const todayEvents = await db.attendanceEvent.findMany({
-      where: { userId: u.id, businessDate: today },
-      orderBy: { timestampUtc: 'asc' },
+  // Dedupe rates: keep the most recent per user (records are ordered by
+  // userId asc, effectiveDate desc — so the first row per user is the winner).
+  const currentRateByUser = new Map<string, number>()
+  for (const r of rateRecords) {
+    if (!currentRateByUser.has(r.userId)) currentRateByUser.set(r.userId, r.hourlyRate)
+  }
+
+  const latestEventByUser = new Map<
+    string,
+    { eventType: string; timestampUtc: Date; correctedById: string | null }
+  >()
+  for (const e of latestEventsPerUser) {
+    // Do NOT skip events with correctedById !== null. Corrected events
+    // (added via admin correction approval) are the source of truth —
+    // see getAgentState in engine.ts for the same change.
+    latestEventByUser.set(e.userId, {
+      eventType: e.eventType,
+      timestampUtc: e.timestampUtc,
+      correctedById: e.correctedById,
     })
-    const rate = await getHourlyRateAt(u.id, new Date())
-    const summary = computeDaySummary(todayEvents, today, rate)
-    const { state } = await getAgentState(u.id)
+  }
+
+  const rows: AdminEmployeeStatusRow[] = []
+  for (const u of users) {
+    const dayEvents = todayEventsByUser.get(u.id) ?? []
+    const rate = currentRateByUser.get(u.id) ?? 5.0
+    const summary = computeDaySummary(dayEvents, today, rate)
+
+    // Derive state from the user's latest event (NOT just today's events).
+    // This matches the semantics of getAgentState in engine.ts.
+    const latest = latestEventByUser.get(u.id)
+    let state: AgentState = 'OFFLINE'
+    if (latest) {
+      switch (latest.eventType as EventType) {
+        case 'CLOCK_OUT':
+          state = 'OFFLINE'
+          break
+        case 'CLOCK_IN':
+        case 'BREAK_END':
+          state = 'WORKING'
+          break
+        case 'BREAK_START':
+          state = 'ON_BREAK'
+          break
+      }
+    }
+
     rows.push({
       id: u.id,
       name: u.name,

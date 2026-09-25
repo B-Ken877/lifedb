@@ -8,6 +8,7 @@
 import { NextResponse } from 'next/server'
 import { requireAdminApi } from '@/lib/session'
 import { db } from '@/lib/db'
+import { parseLimit } from '@/lib/http'
 
 export async function GET(req: Request) {
   const user = await requireAdminApi()
@@ -15,7 +16,7 @@ export async function GET(req: Request) {
 
   const url = new URL(req.url)
   const status = url.searchParams.get('status') || undefined
-  const limit = Math.min(parseInt(url.searchParams.get('limit') || '100', 10), 200)
+  const limit = parseLimit(url.searchParams.get('limit'), { default: 100, max: 200 })
 
   const requests = await db.correctionRequest.findMany({
     where: status ? { status } : undefined,

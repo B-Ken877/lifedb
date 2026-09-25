@@ -12,6 +12,7 @@
 import { NextResponse } from 'next/server'
 import { requireAgentApi } from '@/lib/session'
 import { getHoursByDay, getAttendanceHistory } from '@/lib/attendance/queries'
+import { parseLimit } from '@/lib/http'
 
 export async function GET(req: Request) {
   const user = await requireAgentApi()
@@ -20,10 +21,10 @@ export async function GET(req: Request) {
   const url = new URL(req.url)
   const hours = url.searchParams.get('hours')
   const before = url.searchParams.get('before')
-  const limit = url.searchParams.get('limit')
+  const limitRaw = url.searchParams.get('limit')
 
   if (hours) {
-    const n = parseInt(hours, 10)
+    const n = Number.parseInt(hours, 10)
     if (![7, 14, 30].includes(n)) {
       return NextResponse.json({ error: 'Invalid hours range.' }, { status: 400 })
     }
@@ -31,8 +32,9 @@ export async function GET(req: Request) {
     return NextResponse.json({ hoursByDay: data })
   }
 
+  const limit = parseLimit(limitRaw, { default: 14, max: 90 })
   const page = await getAttendanceHistory(user.id, {
-    limit: limit ? parseInt(limit, 10) : undefined,
+    limit,
     beforeDate: before || undefined,
   })
   return NextResponse.json(page)

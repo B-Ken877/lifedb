@@ -4,40 +4,33 @@
  *
  * Columns: Date,Clock In,Clock Out,Break Time,Net Hours,Hourly Rate,Earnings
  * Times use America/New_York (Eastern Time).
+ *
+ * Hardening: from/to must be valid YYYY-MM-DD; range capped at 366 days
+ * to prevent self-DoS via enormous ranges.
  */
 
-import { NextResponse } from 'next/server'
 import { requireAgentApi } from '@/lib/session'
 import { db } from '@/lib/db'
 import { buildCSV, csvResponse, csvTime } from '@/lib/csv'
-import { computeDaySummary } from '@/lib/attendance/engine'
-import { getHourlyRateAt } from '@/lib/attendance/engine'
-import { businessDateKey, lastNDays } from '@/lib/timezone'
+import { computeDaySummary, getHourlyRateAt } from '@/lib/attendance/engine'
+import { boundedDateRange } from '@/lib/http'
 
 export async function GET(req: Request) {
   const user = await requireAgentApi()
   if (user instanceof Response) return user
 
   const url = new URL(req.url)
-  let fromStr = url.searchParams.get('from')
-  let toStr = url.searchParams.get('to')
-
-  // Default: last 30 days.
-  if (!fromStr || !toStr) {
-    const keys = lastNDays(30).reverse()
-    fromStr = keys[0]
-    toStr = keys[keys.length - 1]
+  const range = boundedDateRange(
+    url.searchParams.get('from'),
+    url.searchParams.get('to'),
+    { maxSpanDays: 366, defaultDays: 30 }
+  )
+  if ('error' in range) {
+    return csvResponse(`error,${range.error}\n`, 'error.csv', 400)
   }
-
-  // Build inclusive list of business date keys between from and to.
-  const fromDate = new Date(`${fromStr}T12:00:00Z`)
-  const toDate = new Date(`${toStr}T12:00:00Z`)
-  const keys: string[] = []
-  const cursor = new Date(fromDate)
-  while (cursor <= toDate) {
-    keys.push(businessDateKey(cursor))
-    cursor.setUTCDate(cursor.getUTCDate() + 1)
-  }
+  const { keys } = range
+  const fromStr = url.searchParams.get('from') ?? keys[0]
+  const toStr = url.searchParams.get('to') ?? keys[keys.length - 1]
 
   // Fetch events.
   const events = await db.attendanceEvent.findMany({

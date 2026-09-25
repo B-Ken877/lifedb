@@ -15,8 +15,26 @@ export async function POST(_req: Request, ctx: { params: Promise<{ id: string }>
   if (admin instanceof Response) return admin
   const { id } = await ctx.params
 
-  const user = await db.user.findUnique({ where: { id } })
+  const user = await db.user.findUnique({ where: { id }, include: { role: true } })
   if (!user) return NextResponse.json({ error: 'Not found.' }, { status: 404 })
+
+  // Cannot force-password-change your own admin account — would lock the
+  // admin out of the system on their next login.
+  if (id === admin.id) {
+    return NextResponse.json(
+      { error: 'You cannot force a password change on your own account.' },
+      { status: 400 }
+    )
+  }
+
+  // This endpoint is scoped to SURVEY_AGENT only — admins cannot use it
+  // against other admins.
+  if (user.role.name === 'ADMIN') {
+    return NextResponse.json(
+      { error: 'This endpoint can only modify agent accounts.' },
+      { status: 403 }
+    )
+  }
 
   // Protected accounts cannot be force-password-changed by admins.
   if (user.isProtected) {

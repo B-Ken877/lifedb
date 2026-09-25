@@ -16,12 +16,13 @@
  */
 
 import { NextResponse } from 'next/server'
-import { z } from 'zod'
+import { z, ZodError } from 'zod'
 import { requireAgentApi } from '@/lib/session'
 import { db } from '@/lib/db'
 import { writeAudit } from '@/lib/audit'
 import { notifyRealtime } from '@/lib/realtime-server'
 import { businessTimeOnDate } from '@/lib/timezone'
+import { parseLimit } from '@/lib/http'
 
 const RequestedChange = z.enum([
   'CLOCK_IN',
@@ -48,7 +49,7 @@ export async function GET(req: Request) {
 
   const url = new URL(req.url)
   const status = url.searchParams.get('status') || undefined
-  const limit = Math.min(parseInt(url.searchParams.get('limit') || '20', 10), 100)
+  const limit = parseLimit(url.searchParams.get('limit'), { default: 20, max: 100 })
 
   const requests = await db.correctionRequest.findMany({
     where: { userId: user.id, status: status || undefined },
@@ -66,11 +67,18 @@ export async function POST(req: Request) {
   let parsed: z.infer<typeof Body>
   try {
     parsed = Body.parse(await req.json())
-  } catch (e: any) {
+  } catch (e: unknown) {
     return NextResponse.json(
-      { error: e?.issues?.[0]?.message || 'Invalid request.' },
+      { error: e instanceof ZodError ? e.issues[0]?.message : 'Invalid request.' },
       { status: 400 }
     )
+  }
+
+  // Validate that targetDate is a real calendar date (e.g. reject '2024-13-45').
+  // Zod's regex only checks the format, not the calendar validity.
+  const targetDateCheck = new Date(`${parsed.targetDate}T12:00:00Z`)
+  if (Number.isNaN(targetDateCheck.getTime())) {
+    return NextResponse.json({ error: 'Invalid target date.' }, { status: 400 })
   }
 
   // Convert requestedTime (HH:mm in business tz) to UTC if provided.

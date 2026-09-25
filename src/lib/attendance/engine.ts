@@ -94,10 +94,17 @@ export function validateTransition(current: AgentState, action: EventType): Even
  * Strategy: get the most recent event. If it's CLOCK_OUT → OFFLINE.
  * If CLOCK_IN or BREAK_END → WORKING. If BREAK_START → ON_BREAK.
  * If no events → OFFLINE.
+ *
+ * NOTE: We deliberately do NOT filter `correctedById: null`. Corrected
+ * events (added via admin correction approval) ARE the source of truth —
+ * if an admin approves a CLOCK_IN correction, the user's live state must
+ * become WORKING. The old filter caused the live state to disagree with
+ * the day summary (which already included corrected events), surfacing
+ * as "Today shows 8h worked but my status is OFFLINE" UX bugs.
  */
 export async function getAgentState(userId: string): Promise<{ state: AgentState; lastEvent?: any }> {
   const last = await db.attendanceEvent.findFirst({
-    where: { userId, correctedById: null },
+    where: { userId },
     orderBy: { timestampUtc: 'desc' },
   })
   if (!last) return { state: 'OFFLINE' }
@@ -128,30 +135,67 @@ export interface RecordEventResult {
 /**
  * Records an attendance event for a user, validating the transition first.
  * Throws on unexpected DB errors. Returns { ok: false, error } on invalid.
+ *
+ * CONCURRENCY: The whole check-then-insert sequence runs inside a single
+ * Postgres transaction that locks the User row (`SELECT ... FOR UPDATE`).
+ * Two concurrent CLOCK_IN requests for the same user therefore serialize
+ * — the second one waits for the first to commit, re-reads the ledger, and
+ * correctly sees WORKING → returns ALREADY_WORKING instead of creating a
+ * duplicate event.
  */
 export async function recordEvent(
   userId: string,
   action: EventType,
   opts?: { source?: string; note?: string; at?: Date }
 ): Promise<RecordEventResult> {
-  const { state: current } = await getAgentState(userId)
-  const err = validateTransition(current, action)
-  if (err) return { ok: false, error: err }
+  return db.$transaction(async (tx) => {
+    // Lock the user row so concurrent recordEvent calls for the same user
+    // serialize. Other users are unaffected.
+    await tx.$executeRaw`SELECT 1 FROM "User" WHERE id = ${userId} FOR UPDATE`
 
-  const now = opts?.at ?? new Date()
-  const event = await db.attendanceEvent.create({
-    data: {
-      userId,
-      eventType: action,
-      timestampUtc: now,
-      businessDate: businessDateKey(now),
-      source: opts?.source ?? 'web',
-      note: opts?.note ?? null,
-    },
+    // Re-read state INSIDE the transaction so we see any committed changes
+    // from a concurrent call.
+    const last = await tx.attendanceEvent.findFirst({
+      where: { userId },
+      orderBy: { timestampUtc: 'desc' },
+    })
+    const current = deriveStateFromEvent(last)
+    const err = validateTransition(current, action)
+    if (err) return { ok: false, error: err }
+
+    const now = opts?.at ?? new Date()
+    const event = await tx.attendanceEvent.create({
+      data: {
+        userId,
+        eventType: action,
+        timestampUtc: now,
+        businessDate: businessDateKey(now),
+        source: opts?.source ?? 'web',
+        note: opts?.note ?? null,
+      },
+    })
+
+    const nextState = deriveStateFromEvent(event)
+    return { ok: true, event, state: nextState }
   })
+}
 
-  const { state } = await getAgentState(userId)
-  return { ok: true, event, state: state }
+/** Pure derivation of state from the latest event. Used internally. */
+function deriveStateFromEvent(
+  last: { eventType: string } | null
+): AgentState {
+  if (!last) return 'OFFLINE'
+  switch (last.eventType as EventType) {
+    case 'CLOCK_OUT':
+      return 'OFFLINE'
+    case 'CLOCK_IN':
+    case 'BREAK_END':
+      return 'WORKING'
+    case 'BREAK_START':
+      return 'ON_BREAK'
+    default:
+      return 'OFFLINE'
+  }
 }
 
 // =====================================================

@@ -5,21 +5,23 @@
  */
 
 import { NextResponse } from 'next/server'
+import { Prisma } from '@prisma/client'
 import { requireAdminApi } from '@/lib/session'
 import { db } from '@/lib/db'
+import { parseLimit, parseOffset } from '@/lib/http'
 
 export async function GET(req: Request) {
   const user = await requireAdminApi()
   if (user instanceof Response) return user
 
   const url = new URL(req.url)
-  const limit = Math.min(parseInt(url.searchParams.get('limit') || '100', 10), 500)
-  const offset = parseInt(url.searchParams.get('offset') || '0', 10)
+  const limit = parseLimit(url.searchParams.get('limit'), { default: 100, max: 500 })
+  const offset = parseOffset(url.searchParams.get('offset'), { max: 10_000 })
   const action = url.searchParams.get('action') || undefined
   const actorId = url.searchParams.get('actorId') || undefined
   const targetId = url.searchParams.get('targetId') || undefined
 
-  const where: any = {}
+  const where: Prisma.AuditLogWhereInput = {}
   if (action) where.action = action
   if (actorId) where.actorId = actorId
   if (targetId) where.targetId = targetId
