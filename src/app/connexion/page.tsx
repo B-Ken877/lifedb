@@ -49,9 +49,13 @@ function LoginInner() {
       setError('Invalid credentials. Please verify your username/email and password.')
       return
     }
-    // Force a hard refresh so middleware re-evaluates the session.
-    router.push('/')
-    router.refresh()
+    // CRITICAL: Use a full-page navigation (not router.push) so the
+    // middleware on the Edge runtime sees the freshly-set session cookie.
+    // router.push + router.refresh does NOT reliably transmit the
+    // next-auth.session-token cookie in Next.js 16's Turbopack dev server.
+    // A hard navigation forces the browser to send the cookie on the
+    // very next request, which is what middleware needs.
+    window.location.href = '/'
   }
 
   return (
