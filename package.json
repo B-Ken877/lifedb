@@ -8,6 +8,8 @@
     "start": "NODE_ENV=production NODE_OPTIONS=--max-old-space-size=2048 bun .next/standalone/server.js",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
+    "setup": "bash scripts/setup.sh",
+    "postinstall": "prisma generate || echo 'prisma generate skipped (likely no schema yet)'",
     "db:push": "prisma db push --accept-data-loss",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
