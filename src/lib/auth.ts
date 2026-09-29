@@ -12,7 +12,7 @@ import bcrypt from 'bcryptjs'
 import { db } from '@/lib/db'
 
 export const authOptions: NextAuthOptions = {
-  session: { strategy: 'jwt', maxAge: 60 * 60 * 12 }, // 12h
+  session: { strategy: 'jwt', maxAge: 60 * 60 * 12 },
   jwt: { maxAge: 60 * 60 * 12 },
   pages: {
     signIn: '/connexion',
@@ -26,38 +26,33 @@ export const authOptions: NextAuthOptions = {
         password: { label: 'Password', type: 'password' },
       },
       async authorize(credentials) {
-        try {
-          if (!credentials?.identifier || !credentials?.password) return null
-          const identifier = credentials.identifier.trim().toLowerCase()
+        if (!credentials?.identifier || !credentials?.password) return null
+        const identifier = credentials.identifier.trim().toLowerCase()
 
-          const user = await db.user.findFirst({
-            where: {
-              OR: [{ email: identifier }, { username: identifier }],
-            },
-            include: { role: true, business: true },
-          })
+        const user = await db.user.findFirst({
+          where: {
+            OR: [{ email: identifier }, { username: identifier }],
+          },
+          include: { role: true, business: true },
+        })
 
-          if (!user) return null
-          if (!user.active) return null
+        if (!user) return null
+        if (!user.active) return null
 
-          const ok = await bcrypt.compare(credentials.password, user.passwordHash)
-          if (!ok) return null
+        const ok = await bcrypt.compare(credentials.password, user.passwordHash)
+        if (!ok) return null
 
-          return {
-            id: user.id,
-            name: user.name,
-            email: user.email,
-            role: user.role.name,
-            username: user.username,
-            employeeId: user.employeeId,
-            businessId: user.businessId,
-            businessName: user.business?.name ?? null,
-            mustChangePassword: user.mustChangePassword,
-          } as any
-        } catch (err) {
-          console.error('[authorize] THREW:', err)
-          return null
-        }
+        return {
+          id: user.id,
+          name: user.name,
+          email: user.email,
+          role: user.role.name,
+          username: user.username,
+          employeeId: user.employeeId,
+          businessId: user.businessId,
+          businessName: user.business?.name ?? null,
+          mustChangePassword: user.mustChangePassword,
+        } as any
       },
     }),
   ],
