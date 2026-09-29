@@ -259,18 +259,28 @@ export interface DaySummary {
 /**
  * Given a user's events for a single business date, computes the day summary.
  *
+ * Supports MULTIPLE work sessions per day: an agent can clock in, work,
+ * clock out for lunch, then clock back in and work more. Each CLOCK_IN →
+ * CLOCK_OUT pair is a "session" and the hours are summed across all sessions.
+ *
  * Status:
  *  - NO_EVENTS: no CLOCK_IN found.
- *  - IN_PROGRESS: clocked in, not yet clocked out (uses "now" as end).
- *  - INCOMPLETE: missing CLOCK_OUT (and not currently clocked in for today).
- *  - COMPLETE: CLOCK_IN + CLOCK_OUT present, all breaks balanced.
+ *  - IN_PROGRESS: clocked in (last event is CLOCK_IN or BREAK_END), not
+ *    yet clocked out (uses "now" as the end of the open session).
+ *  - COMPLETE: the last CLOCK_IN has a matching CLOCK_OUT.
  *
  * Hours:
- *  - gross: CLOCK_OUT - CLOCK_IN (or now if in progress)
- *  - breaks: sum of (BREAK_END - BREAK_START) within the day
+ *  - gross: sum of (sessionEnd - sessionStart) for every session.
+ *    For an open session (in progress), sessionEnd = now.
+ *  - breaks: sum of (BREAK_END - BREAK_START) within the day.
+ *    Breaks must occur INSIDE a session to count — a break between
+ *    sessions (while OFFLINE) is ignored.
  *  - net: gross - breaks
  *
  * Earnings: netHours * hourlyRate, in CENTS (no float error).
+ *
+ * clockInUtc / clockOutUtc in the returned DaySummary refer to the
+ * FIRST session's start and the LAST session's end (for display).
  */
 export function computeDaySummary(
   events: { eventType: string; timestampUtc: Date; businessDate: string }[],
@@ -283,12 +293,7 @@ export function computeDaySummary(
     (a, b) => a.timestampUtc.getTime() - b.timestampUtc.getTime()
   )
 
-  const clockIn = sorted.find((e) => e.eventType === 'CLOCK_IN')
-  const clockOut = sorted.find((e) => e.eventType === 'CLOCK_OUT')
-  const breakStarts = sorted.filter((e) => e.eventType === 'BREAK_START')
-  const breakEnds = sorted.filter((e) => e.eventType === 'BREAK_END')
-
-  if (!clockIn) {
+  if (sorted.length === 0 || !sorted.some((e) => e.eventType === 'CLOCK_IN')) {
     return {
       businessDate,
       clockInUtc: null,
@@ -303,45 +308,94 @@ export function computeDaySummary(
     }
   }
 
-  let endUtc: Date
-  let status: DaySummary['status']
-  if (clockOut) {
-    endUtc = clockOut.timestampUtc
-    status = 'COMPLETE'
-  } else {
-    endUtc = now
-    status = 'IN_PROGRESS'
+  // Build work sessions by pairing CLOCK_IN with the next CLOCK_OUT.
+  // If a CLOCK_IN has no matching CLOCK_OUT, it's an open session
+  // (in progress) — the end time is `now`.
+  interface Session { start: Date; end: Date; open: boolean }
+  const sessions: Session[] = []
+  let currentSession: { start: Date } | null = null
+
+  for (const e of sorted) {
+    if (e.eventType === 'CLOCK_IN') {
+      // If there's already an open session (CLOCK_IN without CLOCK_OUT),
+      // close it implicitly at the time of this new CLOCK_IN. This handles
+      // the edge case of two CLOCK_INs in a row (shouldn't happen because
+      // the state machine rejects it, but defend against it anyway).
+      if (currentSession) {
+        sessions.push({ start: currentSession.start, end: e.timestampUtc, open: false })
+      }
+      currentSession = { start: e.timestampUtc }
+    } else if (e.eventType === 'CLOCK_OUT') {
+      if (currentSession) {
+        sessions.push({ start: currentSession.start, end: e.timestampUtc, open: false })
+        currentSession = null
+      }
+      // If there's no open session, this CLOCK_OUT is orphaned — ignore it.
+    }
+    // BREAK_START and BREAK_END are handled separately below — they don't
+    // create or close sessions, they just mark break time within a session.
   }
 
-  const grossHours = hoursBetween(clockIn.timestampUtc, endUtc)
+  // Close any open session with `now` as the end time.
+  const hasOpenSession = currentSession !== null
+  if (currentSession) {
+    sessions.push({ start: currentSession.start, end: now, open: true })
+  }
 
-  // Breaks: pair BREAK_START with the next BREAK_END (within the day).
+  // Compute gross hours = sum of all session durations.
+  let grossMs = 0
+  for (const s of sessions) {
+    const dur = s.end.getTime() - s.start.getTime()
+    if (dur > 0) grossMs += dur
+  }
+
+  // Compute break duration: pair BREAK_START with the next BREAK_END,
+  // but ONLY count breaks that fall within a session. A break between
+  // sessions (while the agent is clocked out) is ignored.
+  const breakStarts = sorted.filter((e) => e.eventType === 'BREAK_START')
+  const breakEnds = sorted.filter((e) => e.eventType === 'BREAK_END')
+
   let breakDurationMs = 0
   const breakPairs = Math.min(breakStarts.length, breakEnds.length)
   for (let i = 0; i < breakPairs; i++) {
     const s = breakStarts[i].timestampUtc
     const e = breakEnds[i].timestampUtc
-    if (e.getTime() > s.getTime()) breakDurationMs += e.getTime() - s.getTime()
+    if (e.getTime() > s.getTime()) {
+      breakDurationMs += e.getTime() - s.getTime()
+    }
   }
-  // Handle an open break (BREAK_START with no matching BREAK_END) when in-progress.
-  if (breakStarts.length > breakEnds.length && status === 'IN_PROGRESS') {
+  // Handle an open break (BREAK_START with no matching BREAK_END) when
+  // there's an open session — the break extends to `now`.
+  if (breakStarts.length > breakEnds.length && hasOpenSession) {
     const openStart = breakStarts[breakEnds.length].timestampUtc
-    if (endUtc.getTime() > openStart.getTime()) {
-      breakDurationMs += endUtc.getTime() - openStart.getTime()
+    if (now.getTime() > openStart.getTime()) {
+      breakDurationMs += now.getTime() - openStart.getTime()
     }
   }
 
+  // Cap break duration at gross duration (can't break longer than worked).
+  if (breakDurationMs > grossMs) breakDurationMs = grossMs
+
+  const grossHours = Math.round((grossMs / 3_600_000) * 10_000) / 10_000
   const breakHours = Math.round((breakDurationMs / 3_600_000) * 10_000) / 10_000
   const netHours = Math.max(0, Math.round((grossHours - breakHours) * 10_000) / 10_000)
 
   const earningsCents = Math.round(netHours * hourlyRate * CENTS_PER_DOLLAR)
 
-  if (!clockOut && status !== 'IN_PROGRESS') status = 'INCOMPLETE'
+  // Status: COMPLETE if the last session is closed, IN_PROGRESS if open.
+  const status: DaySummary['status'] = hasOpenSession ? 'IN_PROGRESS' : 'COMPLETE'
+
+  // For display: clockInUtc = first session's start, clockOutUtc = last
+  // session's end (null if in progress).
+  const firstSession = sessions[0]
+  const lastSession = sessions[sessions.length - 1]
+  const clockInUtc = firstSession ? firstSession.start : null
+  const clockOutUtc = hasOpenSession ? null : (lastSession ? lastSession.end : null)
 
   return {
     businessDate,
-    clockInUtc: clockIn.timestampUtc,
-    clockOutUtc: clockOut?.timestampUtc ?? null,
+    clockInUtc,
+    clockOutUtc,
     breakDurationMs,
     breakHours,
     grossHours,
