@@ -3,26 +3,54 @@ import * as fs from 'fs'
 import * as path from 'path'
 
 // =====================================================
-// CRITICAL: Override stale system DATABASE_URL.
+// CRITICAL: Resolve DATABASE_URL from multiple sources.
 //
-// Many deployment environments (and this sandbox) pre-set DATABASE_URL as
-// a system environment variable pointing to a SQLite file:
-//   DATABASE_URL=file:/home/z/my-project/db/custom.db
+// The Prisma schema reads `env("DATABASE_URL")` and `env("DIRECT_URL")`.
+// But on Vercel + Supabase, the auto-imported environment variables use
+// Supabase's naming convention:
 //
-// This system env var OVERRIDES whatever's in .env, because process.env
-// is populated before any .env file is loaded. The Prisma client then
-// sees "file:..." and throws:
-//   "the URL must start with the protocol postgresql:// or postgres://"
+//   DATABASE_URL_POSTGRES_PRISMA_URL      ← pooled connection (PgBouncer)
+//   DATABASE_URL_POSTGRES_URL_NON_POOLING ← direct connection
 //
-// Fix: explicitly read .env and force-set DATABASE_URL + DIRECT_URL on
-// process.env BEFORE constructing the PrismaClient. This makes .env take
-// precedence over any stale system env var.
+// These do NOT match what Prisma expects. This module maps them BEFORE
+// constructing the PrismaClient, so the schema's env("DATABASE_URL")
+// resolves correctly.
 //
-// This mirrors the same fix already applied in prisma/seed.ts (commit
-// e0c0455) — the seed has always worked, but the runtime did not, because
-// the runtime relied on Next.js's .env loader which does NOT override
-// existing process.env values.
+// Priority (highest wins):
+//   1. DATABASE_URL          (explicit — set by the operator)
+//   2. DATABASE_URL_POSTGRES_PRISMA_URL  (Supabase auto-import, pooled)
+//   3. .env file             (local dev)
+//
+// Same for DIRECT_URL → DATABASE_URL_POSTGRES_URL_NON_POOLING.
+//
+// Also handles the local-dev case where a stale system DATABASE_URL
+// points to a SQLite file (file:...) — the .env file override wins.
 // =====================================================
+
+function resolveDatabaseUrl(): string | undefined {
+  // 1. Explicit DATABASE_URL (operator set this directly)
+  if (process.env.DATABASE_URL && process.env.DATABASE_URL.trim() !== '') {
+    return process.env.DATABASE_URL
+  }
+  // 2. Supabase auto-import name (Vercel integration)
+  if (process.env.DATABASE_URL_POSTGRES_PRISMA_URL && process.env.DATABASE_URL_POSTGRES_PRISMA_URL.trim() !== '') {
+    return process.env.DATABASE_URL_POSTGRES_PRISMA_URL
+  }
+  // 3. Fall through to .env file (local dev)
+  return undefined
+}
+
+function resolveDirectUrl(): string | undefined {
+  if (process.env.DIRECT_URL && process.env.DIRECT_URL.trim() !== '') {
+    return process.env.DIRECT_URL
+  }
+  if (process.env.DATABASE_URL_POSTGRES_URL_NON_POOLING && process.env.DATABASE_URL_POSTGRES_URL_NON_POOLING.trim() !== '') {
+    return process.env.DATABASE_URL_POSTGRES_URL_NON_POOLING
+  }
+  // Fallback to the pooled URL if no direct URL is available
+  // (migrations will warn but runtime queries will work)
+  return process.env.DATABASE_URL_POSTGRES_PRISMAL_URL ?? undefined
+}
 
 function forceLoadEnvFile(): void {
   const envPath = path.resolve(process.cwd(), '.env')
@@ -42,13 +70,42 @@ function forceLoadEnvFile(): void {
     ) {
       val = val.slice(1, -1)
     }
-    // FORCE override — this is the key difference from dotenv's default
-    // behavior. System env vars (often stale SQLite URLs) must NOT win.
-    process.env[key] = val
+    // Only set if not already defined by the system env (Vercel env vars
+    // take precedence over .env file). This is the opposite of the local-dev
+    // case where we WANT .env to override a stale system DATABASE_URL.
+    if (process.env[key] === undefined || process.env[key] === '') {
+      process.env[key] = val
+    }
   }
 }
 
 forceLoadEnvFile()
+
+// Now resolve and FORCE-set the canonical names so Prisma's
+// env("DATABASE_URL") and env("DIRECT_URL") see the right values.
+const resolvedDbUrl = resolveDatabaseUrl()
+const resolvedDirectUrl = resolveDirectUrl()
+
+if (resolvedDbUrl && (!process.env.DATABASE_URL || process.env.DATABASE_URL.trim() === '')) {
+  process.env.DATABASE_URL = resolvedDbUrl
+}
+if (resolvedDirectUrl && (!process.env.DIRECT_URL || process.env.DIRECT_URL.trim() === '')) {
+  process.env.DIRECT_URL = resolvedDirectUrl
+}
+
+// =====================================================
+// NextAuth URL resolution for Vercel.
+// NextAuth v4 reads NEXTAUTH_URL from env. On Vercel, if it's not
+// explicitly set, fall back to NEXT_PUBLIC_APP_URL, then VERCEL_URL
+// (which Vercel always sets automatically).
+// =====================================================
+if (!process.env.NEXTAUTH_URL || process.env.NEXTAUTH_URL.trim() === '') {
+  if (process.env.NEXT_PUBLIC_APP_URL && process.env.NEXT_PUBLIC_APP_URL.trim() !== '') {
+    process.env.NEXTAUTH_URL = process.env.NEXT_PUBLIC_APP_URL
+  } else if (process.env.VERCEL_URL) {
+    process.env.NEXTAUTH_URL = `https://${process.env.VERCEL_URL}`
+  }
+}
 
 // =====================================================
 // Prisma client (singleton on globalThis to survive HMR in dev)
@@ -62,11 +119,6 @@ const globalForPrisma = globalThis as unknown as {
   __lifedbDbEnvWarned?: boolean
 }
 
-/**
- * Soft validation: warn (not crash) if DATABASE_URL is missing or wrong.
- * Prisma itself will throw a clear error on the first query if the URL
- * is unusable — our warning just adds actionable context.
- */
 function warnIfDatabaseMisconfigured(): void {
   if (globalForPrisma.__lifedbDbEnvWarned) return
   globalForPrisma.__lifedbDbEnvWarned = true
@@ -78,9 +130,9 @@ function warnIfDatabaseMisconfigured(): void {
     // eslint-disable-next-line no-console
     console.warn('┌──────────────────────────────────────────────────────────────────────────────┐')
     // eslint-disable-next-line no-console
-    console.warn('│  ⚠️  DATABASE_URL is not set or is empty. Prisma queries will fail.         │')
+    console.warn('│  ⚠️  DATABASE_URL is not set. Prisma queries will fail.                     │')
     // eslint-disable-next-line no-console
-    console.warn('│     Fix: create .env with DATABASE_URL="postgres://..." and restart.         │')
+    console.warn('│     Set DATABASE_URL or DATABASE_URL_POSTGRES_PRISMA_URL in your env.       │')
     // eslint-disable-next-line no-console
     console.warn('└──────────────────────────────────────────────────────────────────────────────┘')
     return
@@ -94,36 +146,11 @@ function warnIfDatabaseMisconfigured(): void {
     // eslint-disable-next-line no-console
     console.warn('│     The Prisma schema mandates provider = "postgresql".                   │')
     // eslint-disable-next-line no-console
-    console.warn('│     Fix: edit .env to use a postgres:// URL, then restart.                   │')
-    // eslint-disable-next-line no-console
-    console.warn('└──────────────────────────────────────────────────────────────────────────────┘')
-    return
-  }
-
-  if (!DATABASE_URL.startsWith('postgres://') && !DATABASE_URL.startsWith('postgresql://')) {
-    // eslint-disable-next-line no-console
-    console.warn(`┌──────────────────────────────────────────────────────────────────────────────┐`)
-    // eslint-disable-next-line no-console
-    console.warn(`│  ⚠️  DATABASE_URL does not start with postgres:// — Prisma will reject it.   │`)
-    // eslint-disable-next-line no-console
-    console.warn(`│     Got: ${DATABASE_URL.slice(0, 50)}...`.padEnd(78) + '│')
-    // eslint-disable-next-line no-console
-    console.warn('└──────────────────────────────────────────────────────────────────────────────┘')
-    return
-  }
-
-  if (!DIRECT_URL || DIRECT_URL.trim() === '') {
-    // eslint-disable-next-line no-console
-    console.warn('┌──────────────────────────────────────────────────────────────────────────────┐')
-    // eslint-disable-next-line no-console
-    console.warn('│  ⚠️  DIRECT_URL is not set. Migrations will fail (runtime queries are fine).│')
-    // eslint-disable-next-line no-console
     console.warn('└──────────────────────────────────────────────────────────────────────────────┘')
     return
   }
 }
 
-// Create the client.
 function createClient(): PrismaClient {
   warnIfDatabaseMisconfigured()
   const client = globalForPrisma.prisma ?? new PrismaClient({ log: [...logConfig] })
