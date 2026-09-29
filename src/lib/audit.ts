@@ -12,6 +12,7 @@ import { db } from '@/lib/db'
 export type AuditAction =
   | 'EMPLOYEE_CREATED'
   | 'EMPLOYEE_UPDATED'
+  | 'EMPLOYEE_DELETED'
   | 'EMPLOYEE_DEACTIVATED'
   | 'EMPLOYEE_REACTIVATED'
   | 'PASSWORD_RESET'

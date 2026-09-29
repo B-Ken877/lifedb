@@ -190,3 +190,91 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
 
   return NextResponse.json({ ok: true, employee: { id: updated.id, name: updated.name } })
 }
+
+/**
+ * DELETE /api/admin/employees/[id]
+ *
+ * Permanently deletes an agent account and all associated data:
+ *  - AttendanceEvent rows (via cascade)
+ *  - CompensationRecord rows (via cascade)
+ *  - CorrectionRequest rows submitted by the agent (via cascade)
+ *  - Session rows (via cascade)
+ *
+ * The deletion is IRREVERSIBLE. AuditLog rows that reference this user
+ * have onDelete: SetNull (actorId/targetId become NULL), so the audit
+ * trail is preserved with a snapshot of the deleted user in metadata.
+ *
+ * Safeguards:
+ *  - Cannot delete your own admin account
+ *  - Cannot delete other admins or super admins
+ *  - Cannot delete protected accounts
+ *  - Cannot delete agents belonging to another business (returns 404)
+ */
+export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string }> }) {
+  const admin = await requireAdminApi()
+  if (admin instanceof Response) return admin
+  const { id } = await ctx.params
+
+  const user = await db.user.findUnique({
+    where: { id },
+    include: { role: true },
+  })
+  if (!user) return NextResponse.json({ error: 'Not found.' }, { status: 404 })
+
+  // Cross-business isolation: admin can only delete their own business's agents.
+  if (user.businessId !== admin.businessId) {
+    return NextResponse.json({ error: 'Not found.' }, { status: 404 })
+  }
+
+  // Cannot delete your own admin account through this endpoint.
+  if (id === admin.id) {
+    return NextResponse.json(
+      { error: 'You cannot delete your own account.' },
+      { status: 400 }
+    )
+  }
+
+  // This endpoint only deletes SURVEY_AGENT accounts.
+  if (user.role.name === 'ADMIN' || user.role.name === 'SUPER_ADMIN') {
+    return NextResponse.json(
+      { error: 'This endpoint can only delete agent accounts.' },
+      { status: 403 }
+    )
+  }
+
+  // Protected accounts cannot be deleted.
+  if (user.isProtected) {
+    return NextResponse.json(
+      { error: 'This account is protected and cannot be deleted.' },
+      { status: 403 }
+    )
+  }
+
+  // Snapshot the user info for the audit log BEFORE deleting.
+  const snapshot = {
+    id: user.id,
+    email: user.email,
+    name: user.name,
+    username: user.username,
+    employeeId: user.employeeId,
+    role: user.role.name,
+  }
+
+  // Delete the user. Prisma's CASCADE relations handle cleanup:
+  //   - AttendanceEvent (onDelete: Cascade)
+  //   - CompensationRecord (onDelete: Cascade)
+  //   - CorrectionRequest (onDelete: Cascade)
+  //   - Session (onDelete: Cascade)
+  // AuditLog rows that reference this user have onDelete: SetNull
+  // (actorId/targetId become NULL), so the audit trail is preserved.
+  await db.user.delete({ where: { id } })
+
+  await writeAudit({
+    actorId: admin.id,
+    targetId: id,
+    action: 'EMPLOYEE_DELETED',
+    metadata: { deletedUser: snapshot },
+  })
+
+  return NextResponse.json({ ok: true })
+}

@@ -11,6 +11,7 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
+import { useRouter } from 'next/navigation'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -23,7 +24,7 @@ import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
 } from '@/components/ui/dialog'
 import {
-  Pencil, KeyRound, DollarSign, Power, ShieldAlert, Copy, Check, Loader2, ArrowLeft,
+  Pencil, KeyRound, DollarSign, Power, ShieldAlert, Copy, Check, Loader2, ArrowLeft, Trash2,
 } from 'lucide-react'
 import Link from 'next/link'
 import { toast } from 'sonner'
@@ -123,6 +124,7 @@ export function EmployeeDetailClient({
     createdAt: string
   }
 }) {
+  const router = useRouter()
   const [data, setData] = useState<EmployeeDetailData | null>(null)
   const [loading, setLoading] = useState(true)
 
@@ -199,6 +201,12 @@ export function EmployeeDetailClient({
           active={initial.active}
           disabled={initial.isProtected}
           onDone={refresh}
+        />
+        <DeleteAgentDialog
+          employeeId={employeeId}
+          employeeName={initial.name}
+          disabled={initial.isProtected}
+          onDone={() => router.push('/admin/employees')}
         />
       </div>
 
@@ -683,5 +691,93 @@ function ActivateDeactivateButton({
       {busy ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Power className="h-4 w-4 mr-2" />}
       {active ? 'Deactivate' : 'Reactivate'}
     </Button>
+  )
+}
+
+function DeleteAgentDialog({
+  employeeId,
+  employeeName,
+  disabled,
+  onDone,
+}: {
+  employeeId: string
+  employeeName: string
+  disabled?: boolean
+  onDone: () => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [confirmText, setConfirmText] = useState('')
+
+  const submit = async () => {
+    if (confirmText !== 'DELETE') return
+    setBusy(true)
+    try {
+      const res = await fetch(`/api/admin/employees/${employeeId}`, { method: 'DELETE' })
+      const j = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        toast.error(j.error || 'Failed to delete agent.')
+        return
+      }
+      toast.success('Agent permanently deleted.')
+      onDone()
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => { setOpen(o); if (!o) setConfirmText('') }}>
+      <DialogTrigger asChild>
+        <Button variant="destructive" size="sm" disabled={disabled}>
+          <Trash2 className="h-4 w-4 mr-2" /> Delete agent
+        </Button>
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle className="text-destructive">Delete agent permanently</DialogTitle>
+          <DialogDescription>
+            You are about to <strong>permanently delete</strong> the agent account for{' '}
+            <strong>{employeeName}</strong>. This will remove:
+          </DialogDescription>
+        </DialogHeader>
+        <ul className="text-sm text-muted-foreground list-disc pl-5 space-y-1">
+          <li>All attendance events (clock in/out/break history)</li>
+          <li>All compensation records (hourly rate history)</li>
+          <li>All correction requests submitted by this agent</li>
+          <li>The login account itself</li>
+        </ul>
+        <Alert className="border-destructive/30 bg-destructive/5">
+          <AlertTitle className="text-destructive">This action is irreversible.</AlertTitle>
+          <AlertDescription>
+            The audit log will preserve a record of this deletion (with a snapshot of the deleted
+            user), but the data itself cannot be recovered.
+          </AlertDescription>
+        </Alert>
+        <div className="space-y-2">
+          <Label>Type DELETE to confirm</Label>
+          <Input
+            value={confirmText}
+            onChange={(e) => setConfirmText(e.target.value)}
+            placeholder="DELETE"
+            className="font-mono"
+            autoComplete="off"
+          />
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setOpen(false)} disabled={busy}>
+            Cancel
+          </Button>
+          <Button
+            variant="destructive"
+            onClick={submit}
+            disabled={busy || confirmText !== 'DELETE'}
+          >
+            {busy && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+            Delete permanently
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }
