@@ -9,6 +9,7 @@
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "setup": "bash scripts/setup.sh",
+    "supervise": "bash scripts/supervise.sh",
     "postinstall": "prisma generate || echo 'prisma generate skipped (likely no schema yet)'",
     "db:push": "prisma db push --accept-data-loss",
     "db:generate": "prisma generate",

@@ -181,5 +181,5 @@ log "  Press Ctrl+C to stop all services"
 log "═══════════════════════════════════════════════════════════════"
 log ""
 
-# Run Next.js in the foreground so it receives Ctrl+C
-exec bun run dev
+# Run Next.js via the supervisor (auto-restarts on crash)
+exec bash scripts/supervise.sh
