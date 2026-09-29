@@ -66,11 +66,10 @@ function forceLoadEnvFile(): void {
     ) {
       val = val.slice(1, -1)
     }
-    // Only set if not already defined by the system env (Vercel env vars
-    // take precedence over .env file).
-    if (process.env[key] === undefined || process.env[key] === '') {
-      process.env[key] = val
-    }
+    // ALWAYS override — the local sandbox has a stale system
+    // DATABASE_URL=file:... that must NOT win over .env.
+    // On Vercel there's no .env file, so this has no effect.
+    process.env[key] = val
   }
 }
 
