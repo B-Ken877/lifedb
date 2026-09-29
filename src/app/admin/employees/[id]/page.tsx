@@ -16,7 +16,7 @@ export default async function EmployeeDetailPage({
 }: {
   params: Promise<{ id: string }>
 }) {
-  await requireAdmin()
+  const admin = await requireAdmin()
   const { id } = await params
 
   const u = await db.user.findUnique({
@@ -24,11 +24,13 @@ export default async function EmployeeDetailPage({
     include: { role: true },
   })
   if (!u || u.role.name !== 'SURVEY_AGENT') notFound()
+  // Cross-business isolation: admin can only see their own business's agents.
+  if (u.businessId !== admin.businessId) notFound()
 
   const initial = {
     id: u.id,
     name: u.name,
-    employeeId: u.employeeId,
+    employeeId: u.employeeId ?? "",
     username: u.username,
     email: u.email,
     active: u.active,

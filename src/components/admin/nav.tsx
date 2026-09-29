@@ -81,7 +81,7 @@ export function AdminNav({ userName }: { userName: string }) {
             </SheetTrigger>
             <SheetContent side="left" className="w-72 p-4">
               <SheetTitle className="mb-4 flex items-center gap-2">
-                <Clock className="h-5 w-5" /> LIFE DREAM BIG
+                <Clock className="h-5 w-5" /> Clock-Now
               </SheetTitle>
               {links}
             </SheetContent>
@@ -92,7 +92,7 @@ export function AdminNav({ userName }: { userName: string }) {
               <Clock className="h-4 w-4 text-primary-foreground" />
             </div>
             <div className="leading-none">
-              <p className="text-sm font-semibold">LIFE DREAM BIG</p>
+              <p className="text-sm font-semibold">Clock-Now</p>
               <p className="text-[10px] text-muted-foreground uppercase tracking-wider">
                 Admin Console
               </p>

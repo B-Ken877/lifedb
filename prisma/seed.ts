@@ -1,19 +1,17 @@
 /**
- * Database seed.
+ * Clock-Now seed.
  *
  * Idempotent: safe to run multiple times.
  *
  * Creates:
- *  - ADMIN role + SURVEY_AGENT role
- *  - Default administrator account (from env vars)
- *  - Default hourly rate setting
- *  - Protected owner agent account (cannot be edited/deactivated by admins)
+ *  - 3 roles: SUPER_ADMIN, ADMIN, SURVEY_AGENT
+ *  - Default settings (default_hourly_rate, business_timezone)
+ *  - A SUPER_ADMIN account (the platform owner — that's you, Bazile)
+ *  - A default Business "Life Dream BIG"
+ *  - An ADMIN account for that business
+ *  - (Optional) a sample agent under that business
  *
  * Run with: bun run db:seed
- *
- * NOTE: Bun's built-in .env parser expands `$VAR` references, which breaks
- * passwords containing `$`. We use the standard `dotenv` package to parse
- * .env explicitly so values like `wordpa$$123` are preserved verbatim.
  */
 
 import { PrismaClient } from '@prisma/client'
@@ -22,8 +20,6 @@ import * as fs from 'fs'
 import * as path from 'path'
 
 // ---------- Explicit .env parsing (preserves $ literally) ----------
-// We use the same algorithm as the standard dotenv package: split on newlines,
-// skip blanks/comments, strip surrounding quotes, do NOT expand $VAR.
 function loadEnvFile(filePath: string) {
   if (!fs.existsSync(filePath)) return
   const content = fs.readFileSync(filePath, 'utf8')
@@ -34,16 +30,12 @@ function loadEnvFile(filePath: string) {
     if (eq === -1) continue
     const key = trimmed.slice(0, eq).trim()
     let val = trimmed.slice(eq + 1).trim()
-    // Strip matching surrounding quotes (single or double).
     if (
       (val.startsWith('"') && val.endsWith('"')) ||
       (val.startsWith("'") && val.endsWith("'"))
     ) {
       val = val.slice(1, -1)
     }
-    // ALWAYS override — bun's built-in .env parser expands $VAR references,
-    // which corrupts passwords containing $. Our manual parser preserves
-    // the literal value from the file.
     process.env[key] = val
   }
 }
@@ -52,8 +44,21 @@ loadEnvFile(path.resolve(process.cwd(), '.env'))
 
 const db = new PrismaClient()
 
+function slugify(name: string): string {
+  return name
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+}
+
 async function main() {
   // ---------- Roles ----------
+  const superAdminRole = await db.role.upsert({
+    where: { name: 'SUPER_ADMIN' },
+    update: {},
+    create: { name: 'SUPER_ADMIN' },
+  })
   const adminRole = await db.role.upsert({
     where: { name: 'ADMIN' },
     update: {},
@@ -78,20 +83,74 @@ async function main() {
     create: { key: 'business_timezone', value: 'America/New_York' },
   })
 
-  // ---------- Default admin ----------
+  // ---------- Super Admin (platform owner) ----------
+  const saEmail = process.env.SEED_SUPER_ADMIN_EMAIL ?? 'bkencompanyy@gmail.com'
+  const saPassword = process.env.SEED_SUPER_ADMIN_PASSWORD ?? 'wordpa$$123'
+  const saName = process.env.SEED_SUPER_ADMIN_NAME ?? 'Bazile Kenley'
+
+  let superAdmin = await db.user.findFirst({
+    where: { email: saEmail.toLowerCase() },
+  })
+  if (!superAdmin) {
+    const passwordHash = await bcrypt.hash(saPassword, 12)
+    superAdmin = await db.user.create({
+      data: {
+        email: saEmail.toLowerCase(),
+        name: saName,
+        username: 'bken',
+        passwordHash,
+        mustChangePassword: false,
+        active: true,
+        isProtected: true, // super admin is protected — cannot be edited by anyone
+        roleId: superAdminRole.id,
+        businessId: null, // super admin has no business
+      },
+    })
+    console.log(`[seed] Created SUPER_ADMIN: ${saEmail} / ${saPassword}`)
+  } else {
+    // Ensure existing super admin has the right role + protected flag
+    superAdmin = await db.user.update({
+      where: { id: superAdmin.id },
+      data: {
+        roleId: superAdminRole.id,
+        isProtected: true,
+        businessId: null,
+      },
+    })
+    console.log(`[seed] SUPER_ADMIN already exists (${saEmail}) — ensured role + protected`)
+  }
+
+  // ---------- Default Business ----------
+  const businessName = process.env.SEED_BUSINESS_NAME ?? 'Life Dream BIG'
+  const businessSlug = slugify(businessName)
+
+  let business = await db.business.findUnique({ where: { slug: businessSlug } })
+  if (!business) {
+    business = await db.business.create({
+      data: {
+        name: businessName,
+        slug: businessSlug,
+        active: true,
+      },
+    })
+    console.log(`[seed] Created business: ${businessName} (slug: ${businessSlug})`)
+  } else {
+    console.log(`[seed] Business already exists: ${business.name}`)
+  }
+
+  // ---------- Admin for the business ----------
   const adminEmail = process.env.SEED_ADMIN_EMAIL ?? 'admin@lifedreambig.local'
   const adminPassword = process.env.SEED_ADMIN_PASSWORD ?? 'ChangeMe!2025'
   const adminName = process.env.SEED_ADMIN_NAME ?? 'System Administrator'
 
-  const existingAdmin = await db.user.findFirst({
-    where: { roleId: adminRole.id },
+  let admin = await db.user.findFirst({
+    where: { email: adminEmail.toLowerCase() },
   })
-
-  if (!existingAdmin) {
+  if (!admin) {
     const passwordHash = await bcrypt.hash(adminPassword, 12)
-    const admin = await db.user.create({
+    admin = await db.user.create({
       data: {
-        email: adminEmail,
+        email: adminEmail.toLowerCase(),
         name: adminName,
         employeeId: 'ADMIN-001',
         username: 'admin',
@@ -100,85 +159,75 @@ async function main() {
         active: true,
         isProtected: false,
         roleId: adminRole.id,
+        businessId: business.id,
       },
     })
-    await db.compensationRecord.create({
-      data: {
-        userId: admin.id,
-        hourlyRate: parseFloat(defaultRate),
-        effectiveDate: new Date(),
-        note: 'Initial seed rate',
-        createdBy: 'seed',
-      },
-    })
-    console.log(`[seed] Created admin: ${adminEmail} / ${adminPassword}`)
+    console.log(`[seed] Created ADMIN: ${adminEmail} / ${adminPassword}`)
   } else {
-    console.log(`[seed] Admin already exists (${existingAdmin.email})`)
+    admin = await db.user.update({
+      where: { id: admin.id },
+      data: {
+        roleId: adminRole.id,
+        businessId: business.id,
+      },
+    })
+    console.log(`[seed] ADMIN already exists (${adminEmail}) — ensured role + business`)
   }
 
-  // ---------- Protected owner agent ----------
-  // This account is reserved (the project owner's personal agent account).
-  // It is marked isProtected=true so admins CANNOT:
-  //   - edit its profile info
-  //   - reset its password
-  //   - force a password change
-  //   - activate / deactivate it
-  //   - change its hourly rate
-  // The owner can still sign in normally and change their own password via /agent/profile.
-  const ownerEmail = process.env.SEED_OWNER_EMAIL ?? ''
-  const ownerPassword = process.env.SEED_OWNER_PASSWORD ?? ''
-  const ownerName = process.env.SEED_OWNER_NAME ?? 'Owner'
-  const ownerUsername = process.env.SEED_OWNER_USERNAME ?? 'owner'
-  const ownerEmployeeId = process.env.SEED_OWNER_EMPLOYEE_ID ?? 'OWNER-001'
-  const ownerRate = parseFloat(process.env.SEED_OWNER_HOURLY_RATE ?? defaultRate)
+  // Link the business to its owner admin
+  await db.business.update({
+    where: { id: business.id },
+    data: { ownerAdminId: admin.id },
+  })
 
-  if (ownerEmail && ownerPassword) {
-    const existingOwner = await db.user.findFirst({
-      where: {
-        OR: [{ email: ownerEmail.toLowerCase() }, { username: ownerUsername.toLowerCase() }],
-      },
+  // ---------- Optional sample agent ----------
+  const agentEmail = process.env.SEED_AGENT_EMAIL ?? ''
+  const agentPassword = process.env.SEED_AGENT_PASSWORD ?? ''
+  const agentName = process.env.SEED_AGENT_NAME ?? ''
+  const agentUsername = process.env.SEED_AGENT_USERNAME ?? ''
+  const agentEmployeeId = process.env.SEED_AGENT_EMPLOYEE_ID ?? ''
+  const agentRate = parseFloat(process.env.SEED_AGENT_HOURLY_RATE ?? defaultRate)
+
+  if (agentEmail && agentPassword && agentUsername) {
+    let agent = await db.user.findFirst({
+      where: { email: agentEmail.toLowerCase() },
     })
-
-    if (!existingOwner) {
-      const passwordHash = await bcrypt.hash(ownerPassword, 12)
-      const owner = await db.user.create({
+    if (!agent) {
+      const passwordHash = await bcrypt.hash(agentPassword, 12)
+      agent = await db.user.create({
         data: {
-          email: ownerEmail.toLowerCase(),
-          name: ownerName,
-          employeeId: ownerEmployeeId,
-          username: ownerUsername.toLowerCase(),
+          email: agentEmail.toLowerCase(),
+          name: agentName || 'Sample Agent',
+          employeeId: agentEmployeeId || 'AGENT-001',
+          username: agentUsername.toLowerCase(),
           passwordHash,
-          mustChangePassword: false,
+          mustChangePassword: true,
           active: true,
-          isProtected: true,
+          isProtected: false,
           roleId: agentRole.id,
+          businessId: business.id,
         },
       })
       await db.compensationRecord.create({
         data: {
-          userId: owner.id,
-          hourlyRate: ownerRate,
+          userId: agent.id,
+          businessId: business.id,
+          hourlyRate: agentRate,
           effectiveDate: new Date(),
-          note: 'Initial rate for protected owner account',
+          note: 'Initial rate on account creation',
           createdBy: 'seed',
         },
       })
-      console.log(`[seed] Created protected owner agent: ${ownerEmail}`)
-    } else if (existingOwner.isProtected) {
-      console.log(`[seed] Protected owner already exists (${existingOwner.email})`)
+      console.log(`[seed] Created sample agent: ${agentEmail}`)
     } else {
-      // An account exists with this email/username but it's NOT protected.
-      // Do NOT silently upgrade it — flag it for the operator to resolve manually.
-      console.warn(
-        `[seed] WARNING: account ${existingOwner.email} exists but isProtected=false. ` +
-          `Not modifying it. Resolve manually if this should be the protected owner.`
-      )
+      console.log(`[seed] Sample agent already exists (${agentEmail})`)
     }
   } else {
-    console.log('[seed] SEED_OWNER_EMAIL / SEED_OWNER_PASSWORD not set — skipping protected owner creation.')
+    console.log('[seed] SEED_AGENT_* not set — skipping sample agent creation.')
   }
 
-  console.log(`[seed] Roles: ADMIN=${adminRole.id}, SURVEY_AGENT=${agentRole.id}`)
+  console.log(`[seed] Roles: SUPER_ADMIN=${superAdminRole.id}, ADMIN=${adminRole.id}, SURVEY_AGENT=${agentRole.id}`)
+  console.log(`[seed] Business: ${business.name} (owner: ${admin.email})`)
   console.log('[seed] Done.')
 }
 

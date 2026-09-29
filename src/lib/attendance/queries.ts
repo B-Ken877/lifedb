@@ -260,7 +260,7 @@ export async function getAttendanceHistory(
 export interface AdminEmployeeStatusRow {
   id: string
   name: string
-  employeeId: string
+  employeeId: string | null
   username: string
   state: AgentState
   todayClockInUtc: Date | null
@@ -272,44 +272,33 @@ export interface AdminEmployeeStatusRow {
   active: boolean
 }
 
-export async function getAdminEmployeeStatusRows(): Promise<AdminEmployeeStatusRow[]> {
-  // PERFORMANCE: This used to do 3 queries PER agent — for N agents that's
-  // ~3N+1 sequential round-trips. With 500 agents that's 1500+ queries and
-  // the endpoint blows past typical API timeouts.
-  //
-  // New strategy: 3 parallel bulk queries + 1 in-memory join.
-  //   1. All agents (single findMany)
-  //   2. Today's events across all agents (single findMany)
-  //   3. Each agent's most recent event (single raw SQL `DISTINCT ON`)
-  //   4. Current effective rates (single CompensationRecord findMany)
-  //
-  // Total: 4 queries regardless of agent count.
+export async function getAdminEmployeeStatusRows(businessId: string): Promise<AdminEmployeeStatusRow[]> {
+  // PERFORMANCE: 4 parallel bulk queries + in-memory join.
+  // Scoped to a single business — admins can never see another business's agents.
   const agentRole = await db.role.findUnique({ where: { name: 'SURVEY_AGENT' } })
   if (!agentRole) return []
 
   const [users, todayEvents, latestEventsPerUser, rateRecords] = await Promise.all([
     db.user.findMany({
-      where: { roleId: agentRole.id },
+      where: { roleId: agentRole.id, businessId },
       orderBy: { name: 'asc' },
     }),
     db.attendanceEvent.findMany({
-      where: { businessDate: businessDateKey(new Date()) },
+      where: { businessDate: businessDateKey(new Date()), businessId },
       orderBy: { timestampUtc: 'asc' },
     }),
-    // Postgres DISTINCT ON returns one row per userId — the most recent event.
-    // This is the only way to avoid a per-user query for "current state".
     db.$queryRaw<
       Array<{ userId: string; eventType: string; timestampUtc: Date; correctedById: string | null }>
     >`
       SELECT DISTINCT ON ("userId") "userId", "eventType", "timestampUtc", "correctedById"
       FROM "AttendanceEvent"
       WHERE "userId" IN (
-        SELECT u.id FROM "User" u WHERE u."roleId" = ${agentRole.id}
+        SELECT u.id FROM "User" u WHERE u."roleId" = ${agentRole.id} AND u."businessId" = ${businessId}
       )
       ORDER BY "userId" ASC, "timestampUtc" DESC
     `,
     db.compensationRecord.findMany({
-      where: { effectiveDate: { lte: new Date() }, user: { roleId: agentRole.id } },
+      where: { effectiveDate: { lte: new Date() }, user: { roleId: agentRole.id, businessId } },
       orderBy: [{ userId: 'asc' }, { effectiveDate: 'desc' }],
     }),
   ])
@@ -404,8 +393,8 @@ export interface AdminDashboardStats {
   }>
 }
 
-export async function getAdminDashboardStats(): Promise<AdminDashboardStats> {
-  const rows = await getAdminEmployeeStatusRows()
+export async function getAdminDashboardStats(businessId: string): Promise<AdminDashboardStats> {
+  const rows = await getAdminEmployeeStatusRows(businessId)
   const workingCount = rows.filter((r) => r.state === 'WORKING').length
   const onBreakCount = rows.filter((r) => r.state === 'ON_BREAK').length
   const offlineCount = rows.filter((r) => r.state === 'OFFLINE').length
@@ -413,9 +402,10 @@ export async function getAdminDashboardStats(): Promise<AdminDashboardStats> {
   const todayTotalNetHours = Math.round(rows.reduce((s, r) => s + r.todayNetHours, 0) * 10_000) / 10_000
   const todayEstimatedPayrollCents = rows.reduce((s, r) => s + r.todayEarningsCents, 0)
 
-  // Recent activity: latest 30 attendance events across all agents.
+  // Recent activity: latest 30 attendance events for THIS business only.
   const recentEvents = await db.attendanceEvent.findMany({
     take: 30,
+    where: { businessId },
     orderBy: { timestampUtc: 'desc' },
     include: { user: { select: { name: true } } },
   })

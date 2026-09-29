@@ -15,8 +15,8 @@ import { computeDaySummary, getHourlyRateAt } from '@/lib/attendance/engine'
 import { boundedDateRange } from '@/lib/http'
 
 export async function GET(req: Request) {
-  const user = await requireAdminApi()
-  if (user instanceof Response) return user
+  const admin = await requireAdminApi()
+  if (admin instanceof Response) return admin
 
   const url = new URL(req.url)
   const range = boundedDateRange(
@@ -34,14 +34,14 @@ export async function GET(req: Request) {
   const agentRole = await db.role.findUnique({ where: { name: 'SURVEY_AGENT' } })
   if (!agentRole) return csvResponse('Employee,Employee ID,Date,Clock In,Clock Out,Break,Net Hours,Hourly Rate,Earnings\n', 'attendance_empty.csv')
 
-  const users = await db.user.findMany({ where: { roleId: agentRole.id }, orderBy: { name: 'asc' } })
+  const users = await db.user.findMany({ where: { roleId: agentRole.id, businessId: admin.businessId }, orderBy: { name: 'asc' } })
   const rows: (string | number)[][] = [
     ['Employee', 'Employee ID', 'Date', 'Clock In', 'Clock Out', 'Break', 'Net Hours', 'Hourly Rate', 'Earnings'],
   ]
 
   for (const u of users) {
     const events = await db.attendanceEvent.findMany({
-      where: { userId: u.id, businessDate: { in: keys } },
+      where: { userId: u.id, businessDate: { in: keys }, businessId: admin.businessId },
       orderBy: { timestampUtc: 'asc' },
     })
     const byDate = new Map<string, typeof events>()
@@ -60,7 +60,7 @@ export async function GET(req: Request) {
       if (summary.netHours === 0) continue
       rows.push([
         u.name,
-        u.employeeId,
+        u.employeeId ?? "",
         key,
         csvTime(summary.clockInUtc),
         csvTime(summary.clockOutUtc),

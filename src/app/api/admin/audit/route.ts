@@ -2,6 +2,12 @@
  * GET /api/admin/audit?limit=N&offset=K&action=...&actorId=...
  *
  * Returns audit log entries, paginated, newest first.
+ *
+ * NOTE: Admin audit logs are NOT yet business-scoped. The super admin (and
+ * currently admins too) can see audit entries from all businesses. This is
+ * intentional for now — full audit visibility is required before tenant
+ * isolation is complete. A future task will add a `businessId` filter to
+ * AuditLog and scope this query by `admin.businessId`.
  */
 
 import { NextResponse } from 'next/server'

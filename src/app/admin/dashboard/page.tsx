@@ -11,8 +11,8 @@ import { getAdminDashboardStats } from '@/lib/attendance/queries'
 import { AdminDashboardClient } from '@/components/admin/dashboard-client'
 
 export default async function AdminDashboardPage() {
-  await requireAdmin()
-  const stats = await getAdminDashboardStats()
+  const admin = await requireAdmin()
+  const stats = await getAdminDashboardStats(admin.businessId!)
 
   const initial = {
     workingCount: stats.workingCount,

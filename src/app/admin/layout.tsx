@@ -13,7 +13,7 @@ export default async function AdminLayout({ children }: React.PropsWithChildren)
       <main className="flex-1 px-4 lg:px-6 py-6 max-w-7xl w-full mx-auto">{children}</main>
       <footer className="border-t mt-auto">
         <div className="px-4 lg:px-6 py-3 text-xs text-muted-foreground">
-          LIFE DREAM BIG — Clocking System · Admin Console · Internal use only
+          Clock-Now · Admin Console · Internal use only
         </div>
       </footer>
     </div>

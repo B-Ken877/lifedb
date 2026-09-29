@@ -95,6 +95,7 @@ export async function POST(req: Request) {
   const created = await db.correctionRequest.create({
     data: {
       userId: user.id,
+      businessId: user.businessId,
       targetDate: parsed.targetDate,
       requestedChange: parsed.requestedChange,
       requestedTime: requestedTimeUtc,

@@ -146,7 +146,7 @@ export interface RecordEventResult {
 export async function recordEvent(
   userId: string,
   action: EventType,
-  opts?: { source?: string; note?: string; at?: Date }
+  opts?: { source?: string; note?: string; at?: Date; businessId?: string | null }
 ): Promise<RecordEventResult> {
   return db.$transaction(async (tx) => {
     // Lock the user row so concurrent recordEvent calls for the same user
@@ -167,6 +167,7 @@ export async function recordEvent(
     const event = await tx.attendanceEvent.create({
       data: {
         userId,
+        businessId: opts?.businessId ?? null,
         eventType: action,
         timestampUtc: now,
         businessDate: businessDateKey(now),

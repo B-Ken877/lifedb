@@ -1,5 +1,5 @@
-// LIFE DREAM BIG — Clocking System
-// Prisma schema (PostgreSQL — Supabase)
+// Clock-Now — multi-tenant timekeeping platform
+// Prisma schema (PostgreSQL)
 // Learn more: https://pris.ly/d/prisma-schema
 
 generator client {
@@ -7,16 +7,40 @@ generator client {
 }
 
 datasource db {
-  // Production: Postgres on Supabase (or any other Postgres provider).
-  // `url` is used by the Prisma Client at runtime — should point to the
-  // pooled connection (PgBouncer / transaction mode) so serverless functions
-  // don't exhaust DB connections.
-  // `directUrl` is used by `prisma db push` / `prisma migrate` — should point
-  // to the direct (non-pooled) connection because PgBouncer transaction mode
-  // does not support DDL operations.
   provider  = "postgresql"
   url       = env("DATABASE_URL")
   directUrl = env("DIRECT_URL")
+}
+
+// =====================================================
+// Businesses (tenants)
+//
+// Each business is a separate client. An ADMIN owns one business.
+// All agents, attendance events, compensation records, and correction
+// requests are scoped to a business — admins can never see another
+// business's data.
+// =====================================================
+
+model Business {
+  id          String   @id @default(cuid())
+  name        String   // Display name (e.g., "Life Dream BIG")
+  slug        String   @unique // URL-friendly identifier (e.g., "life-dream-big")
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // The admin user who owns/manages this business.
+  ownerAdminId String? @unique // → User.id (the ADMIN for this business)
+  ownerAdmin   User?   @relation("BusinessOwner", fields: [ownerAdminId], references: [id], onDelete: SetNull)
+
+  // All users belonging to this business (admins + agents).
+  users             User[]
+  attendanceEvents  AttendanceEvent[]
+  compensationRecords CompensationRecord[]
+  correctionRequests CorrectionRequest[]
+
+  @@index([active])
+  @@index([ownerAdminId])
 }
 
 // =====================================================
@@ -25,20 +49,20 @@ datasource db {
 
 model Role {
   id        String   @id @default(cuid())
-  name      String   @unique // "ADMIN" | "SURVEY_AGENT"
+  name      String   @unique // "SUPER_ADMIN" | "ADMIN" | "SURVEY_AGENT"
   users     User[]
   createdAt DateTime @default(now())
 }
 
 // =====================================================
-// Users (administrators + survey agents)
+// Users (super admins + business admins + agents)
 // =====================================================
 
 model User {
   id                 String   @id @default(cuid())
   email              String   @unique
   name               String
-  employeeId         String   @unique // company-assigned agent/employee ID
+  employeeId         String? // company-assigned agent/employee ID (nullable for super admins)
   username           String   @unique // login identifier
   // Password hashing: bcrypt (cost 12). Never store plaintext.
   passwordHash       String
@@ -46,10 +70,18 @@ model User {
   mustChangePassword Boolean  @default(false)
   active             Boolean  @default(true)
   // Protected accounts cannot be edited, deactivated, rate-changed, or
-  // password-reset by an admin. Used for ownership / break-glass accounts.
+  // password-reset by anyone except a SUPER_ADMIN. Used for the platform
+  // owner's super admin account.
   isProtected        Boolean  @default(false)
   roleId             String
   role               Role     @relation(fields: [roleId], references: [id])
+  // Multi-tenancy: which business does this user belong to?
+  // Super admins have businessId = null (they belong to the platform).
+  // Admins and agents have businessId pointing to their employer.
+  businessId         String?
+  business           Business? @relation(fields: [businessId], references: [id], onDelete: SetNull)
+  // For ADMIN users: the business they own/manage (if they're the owner).
+  ownedBusiness      Business? @relation("BusinessOwner")
   // Attendance events emitted by this user (agent).
   attendanceEvents   AttendanceEvent[]
   // Compensation history (effective-dated hourly rates).
@@ -61,107 +93,78 @@ model User {
   // Audit log entries produced by or targeting this user.
   auditLogsAsActor  AuditLog[] @relation("AuditActor")
   auditLogsAsTarget AuditLog[] @relation("AuditTarget")
-  // Sessions (NextAuth JWT-based; this model is reserved for future DB-session strategy).
-  sessions           Session[]
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
   @@index([roleId])
   @@index([active])
   @@index([isProtected])
-}
-
-// =====================================================
-// Sessions (reserved — currently using JWT strategy)
-// =====================================================
-
-model Session {
-  id           String   @id @default(cuid())
-  sessionToken String   @unique
-  userId       String
-  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  expires      DateTime
-  createdAt    DateTime @default(now())
-
-  @@index([userId])
+  @@index([businessId])
 }
 
 // =====================================================
 // Compensation history (effective-dated hourly rates)
-//
-// This preserves historical payroll correctness: changing today's rate does
-// not retroactively rewrite past calculations. Each event-driven calculation
-// resolves the applicable rate via effectiveDate <= event date.
 // =====================================================
 
 model CompensationRecord {
   id           String   @id @default(cuid())
   userId       String
   user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  businessId   String?
+  business     Business? @relation(fields: [businessId], references: [id], onDelete: SetNull)
   hourlyRate   Float    // stored as decimal dollars (e.g., 5.00)
   effectiveDate DateTime // date the rate takes effect (business tz date)
   note         String?
-  createdBy    String   // admin userId
+  createdBy    String   // admin userId (or "seed")
   createdAt    DateTime @default(now())
 
   @@index([userId, effectiveDate])
+  @@index([businessId])
 }
 
 // =====================================================
-// Attendance event ledger
-//
-// The source of truth. Worked hours, breaks, and earnings are DERIVED from
-// this immutable event stream. There is no manually editable "hoursWorked"
-// field. Corrections add audit metadata; original events are preserved.
+// Attendance event ledger (source of truth)
 // =====================================================
 
 model AttendanceEvent {
   id              String   @id @default(cuid())
   userId          String
   user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  businessId      String?
+  business        Business? @relation(fields: [businessId], references: [id], onDelete: SetNull)
   // CLOCK_IN | CLOCK_OUT | BREAK_START | BREAK_END
   eventType       String
-  // Stored in UTC. The business timezone (America/New_York) is applied at read time.
+  // Stored in UTC. Business timezone applied at read time.
   timestampUtc    DateTime
   // The business date (America/New_York) at the moment of the event.
-  // Pre-computed so queries by-day are fast and timezone-correct.
-  businessDate    String // YYYY-MM-DD in America/New_York
-  // Source/device that emitted the event (e.g., "web", "mobile", "admin-correction").
+  businessDate    String // YYYY-MM-DD
   source          String   @default("web")
-  // Free-form note attached to the event.
   note            String?
-  // Correction metadata (if this event was added/edited via admin correction).
   correctedById   String?
   correctionReason String?
-  // Audit linkage
   createdAt       DateTime @default(now())
 
   @@index([userId, businessDate])
   @@index([userId, timestampUtc])
   @@index([eventType, businessDate])
+  @@index([businessId])
 }
 
 // =====================================================
 // Correction requests
-//
-// Employees report attendance mistakes (forgot clock in, etc.).
-// Admins APPROVE or REJECT. Approved requests produce AttendanceEvent
-// adjustments WITHOUT deleting the original record.
 // =====================================================
 
 model CorrectionRequest {
   id              String   @id @default(cuid())
   userId          String   // agent submitting the request
   user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  // Date the request concerns (business tz YYYY-MM-DD).
+  businessId      String?
+  business        Business? @relation(fields: [businessId], references: [id], onDelete: SetNull)
   targetDate      String
-  // CLOCK_IN | CLOCK_OUT | BREAK_START | BREAK_END | OTHER
   requestedChange String
-  // Optional requested time (ISO UTC). May be null for "forgot to clock out" style requests.
   requestedTime   String?
   reason          String
   note            String?
-  // PENDING | APPROVED | REJECTED
   status          String   @default("PENDING")
   reviewedById    String?
   reviewer        User?    @relation("ReviewedBy", fields: [reviewedById], references: [id])
@@ -172,12 +175,11 @@ model CorrectionRequest {
 
   @@index([userId, status])
   @@index([status])
+  @@index([businessId])
 }
 
 // =====================================================
-// Audit log
-//
-// Records every meaningful mutation for compliance.
+// Audit log (append-only)
 // =====================================================
 
 model AuditLog {
@@ -186,9 +188,7 @@ model AuditLog {
   actor        User?    @relation("AuditActor", fields: [actorId], references: [id])
   targetId     String?
   target       User?    @relation("AuditTarget", fields: [targetId], references: [id])
-  // e.g., EMPLOYEE_CREATED, PASSWORD_RESET, RATE_CHANGED, CORRECTION_APPROVED, ...
   action       String
-  // JSON snapshot of relevant values: { oldValue, newValue, reason, ... }
   metadata     String
   createdAt    DateTime @default(now())
 
@@ -199,7 +199,7 @@ model AuditLog {
 }
 
 // =====================================================
-// Settings (company-wide; e.g., default hourly rate, expected hours)
+// Settings (company-wide; e.g., default hourly rate)
 // =====================================================
 
 model Setting {

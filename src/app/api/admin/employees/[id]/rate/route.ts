@@ -38,6 +38,12 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   const user = await db.user.findUnique({ where: { id } })
   if (!user) return NextResponse.json({ error: 'Not found.' }, { status: 404 })
 
+  // Multi-tenancy: prevent cross-business data access. Return 404 (not 403)
+  // so we don't leak the existence of resources in other businesses.
+  if (user.businessId !== admin.businessId) {
+    return NextResponse.json({ error: 'Not found.' }, { status: 404 })
+  }
+
   // Protected accounts cannot have their hourly rate changed by admins.
   if (user.isProtected) {
     return NextResponse.json(
@@ -58,6 +64,8 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
       effectiveDate: effective,
       note: parsed.note ?? `Changed by ${admin.name}`,
       createdBy: admin.id,
+      // Multi-tenancy: scope the compensation record to the admin's business.
+      businessId: admin.businessId,
     },
   })
 

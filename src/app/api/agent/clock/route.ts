@@ -34,7 +34,7 @@ export async function POST(req: Request) {
   }
 
   const action = parsed.action as EventType
-  const result = await recordEvent(user.id, action, { source: 'web' })
+  const result = await recordEvent(user.id, action, { source: 'web', businessId: user.businessId })
 
   if (!result.ok) {
     return NextResponse.json(

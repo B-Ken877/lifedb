@@ -21,7 +21,7 @@ import { cn } from '@/lib/utils'
 interface EmployeeRow {
   id: string
   name: string
-  employeeId: string
+  employeeId: string | null
   username: string
   state: 'OFFLINE' | 'WORKING' | 'ON_BREAK'
   todayClockInUtc: string | null

@@ -27,6 +27,12 @@ export type AuditAction =
   | 'CLOCK_OUT'
   | 'BREAK_START'
   | 'BREAK_END'
+  // Super-admin / platform-level actions
+  | 'BUSINESS_CREATED'
+  | 'BUSINESS_UPDATED'
+  | 'BUSINESS_DEACTIVATED'
+  | 'ADMIN_CREATED'
+  | 'ADMIN_UPDATED'
 
 export interface AuditEntry {
   actorId?: string

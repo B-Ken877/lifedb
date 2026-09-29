@@ -1,38 +1,33 @@
 /**
- * POST /api/admin/employees/[id]/reset-password
+ * POST /api/super-admin/admins/[id]/reset-password
  *
  * Generates a new temporary password, sets mustChangePassword=true.
  * The new temp password is returned ONCE in the response.
- * Old password hash is overwritten; agent must use the new temp password.
+ * Old password hash is overwritten; the admin must use the new temp password.
+ *
+ * Super-admin only. Unlike the admin→agent endpoint, super-admin CAN reset
+ * passwords for protected admin accounts (the project owner can recover
+ * any locked-out tenant admin).
  */
 
 import { NextResponse } from 'next/server'
-import { requireAdminApi } from '@/lib/session'
+import { requireSuperAdminApi } from '@/lib/session'
 import { db } from '@/lib/db'
 import { hashPassword, generateTemporaryPassword } from '@/lib/password'
 import { writeAudit } from '@/lib/audit'
 
 export async function POST(_req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const admin = await requireAdminApi()
+  const admin = await requireSuperAdminApi()
   if (admin instanceof Response) return admin
   const { id } = await ctx.params
 
+  const adminRole = await db.role.findUnique({ where: { name: 'ADMIN' } })
+
   const user = await db.user.findUnique({ where: { id } })
   if (!user) return NextResponse.json({ error: 'Not found.' }, { status: 404 })
-
-  // Multi-tenancy: prevent cross-business data access. Return 404 (not 403)
-  // so we don't leak the existence of resources in other businesses.
-  if (user.businessId !== admin.businessId) {
+  // Only ADMIN passwords are resettable through this endpoint.
+  if (!adminRole || user.roleId !== adminRole.id) {
     return NextResponse.json({ error: 'Not found.' }, { status: 404 })
-  }
-
-  // Protected accounts cannot have their password reset by admins.
-  // The owner can change their own password via /agent/profile.
-  if (user.isProtected) {
-    return NextResponse.json(
-      { error: 'This account is protected. The owner must change their own password via their profile page.' },
-      { status: 403 }
-    )
   }
 
   const temp = generateTemporaryPassword()
@@ -46,7 +41,7 @@ export async function POST(_req: Request, ctx: { params: Promise<{ id: string }>
     actorId: admin.id,
     targetId: id,
     action: 'PASSWORD_RESET',
-    metadata: { at: new Date().toISOString() },
+    metadata: { at: new Date().toISOString(), scope: 'super-admin' },
   })
 
   return NextResponse.json({

@@ -31,14 +31,14 @@ const Body = z.object({
 })
 
 export async function GET() {
-  const user = await requireAdminApi()
-  if (user instanceof Response) return user
+  const admin = await requireAdminApi()
+  if (admin instanceof Response) return admin
 
   const agentRole = await db.role.findUnique({ where: { name: 'SURVEY_AGENT' } })
   if (!agentRole) return NextResponse.json({ employees: [] })
 
   const users = await db.user.findMany({
-    where: { roleId: agentRole.id },
+    where: { roleId: agentRole.id, businessId: admin.businessId },
     orderBy: { name: 'asc' },
   })
 
@@ -116,6 +116,8 @@ export async function POST(req: Request) {
       // protected accounts (the project owner's personal account).
       isProtected: false,
       roleId: agentRole.id,
+      // Multi-tenancy: scope the new agent to the admin's business.
+      businessId: admin.businessId,
     },
   })
 
@@ -126,6 +128,8 @@ export async function POST(req: Request) {
       effectiveDate: new Date(),
       note: 'Initial rate on account creation',
       createdBy: admin.id,
+      // Multi-tenancy: scope the compensation record to the admin's business.
+      businessId: admin.businessId,
     },
   })
 

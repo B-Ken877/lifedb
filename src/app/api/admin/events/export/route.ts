@@ -15,8 +15,8 @@ import { formatBusinessDateTime } from '@/lib/timezone'
 import { boundedDateRange } from '@/lib/http'
 
 export async function GET(req: Request) {
-  const user = await requireAdminApi()
-  if (user instanceof Response) return user
+  const admin = await requireAdminApi()
+  if (admin instanceof Response) return admin
 
   const url = new URL(req.url)
   const range = boundedDateRange(
@@ -32,7 +32,7 @@ export async function GET(req: Request) {
   const toStr = url.searchParams.get('to') ?? keys[keys.length - 1]
 
   const events = await db.attendanceEvent.findMany({
-    where: { businessDate: { in: keys } },
+    where: { businessDate: { in: keys }, businessId: admin.businessId },
     orderBy: { timestampUtc: 'desc' },
     include: { user: { select: { name: true, employeeId: true } } },
   })

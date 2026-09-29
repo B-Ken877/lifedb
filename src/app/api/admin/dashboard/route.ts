@@ -16,10 +16,10 @@ import { requireAdminApi } from '@/lib/session'
 import { getAdminDashboardStats } from '@/lib/attendance/queries'
 
 export async function GET() {
-  const user = await requireAdminApi()
-  if (user instanceof Response) return user
+  const admin = await requireAdminApi()
+  if (admin instanceof Response) return admin
 
-  const stats = await getAdminDashboardStats()
+  const stats = await getAdminDashboardStats(admin.businessId!)
 
   return NextResponse.json({
     workingCount: stats.workingCount,

@@ -12,8 +12,8 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "LIFE DREAM BIG — Clocking System",
-  description: "Internal employee timekeeping platform",
+  title: "Clock-Now — Timekeeping Platform",
+  description: "Multi-tenant workforce timekeeping platform",
   robots: { index: false, follow: false },
   icons: {
     icon: "/logo.svg",

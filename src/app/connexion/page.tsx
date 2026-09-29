@@ -10,7 +10,7 @@
  * Visual identity:
  *  - No marketing copy.
  *  - Centered card on a muted background.
- *  - Clear "LIFE DREAM BIG / Clocking System" wordmark.
+ *  - Clear "Clock-Now / Timekeeping Platform" wordmark.
  *  - High-contrast submit button, accessible labels, keyboard-navigable.
  */
 
@@ -65,8 +65,8 @@ function LoginInner() {
           <div className="h-14 w-14 rounded-xl bg-primary flex items-center justify-center mb-3 shadow-sm">
             <ShieldCheck className="h-7 w-7 text-primary-foreground" />
           </div>
-          <h1 className="text-2xl font-semibold tracking-tight">LIFE DREAM BIG</h1>
-          <p className="text-sm text-muted-foreground mt-1">Clocking System</p>
+          <h1 className="text-2xl font-semibold tracking-tight">Clock-Now</h1>
+          <p className="text-sm text-muted-foreground mt-1">Timekeeping Platform</p>
         </div>
 
         <Card className="shadow-sm">

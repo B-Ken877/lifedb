@@ -62,6 +62,12 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   })
   if (!req_) return NextResponse.json({ error: 'Not found.' }, { status: 404 })
 
+  // Multi-tenancy: prevent cross-business data access. Return 404 (not 403)
+  // so we don't leak the existence of resources in other businesses.
+  if (req_.businessId !== admin.businessId) {
+    return NextResponse.json({ error: 'Not found.' }, { status: 404 })
+  }
+
   // Compute the corrected event details up front so we can create it
   // inside the transaction (validates businessTimeOnDate before locking).
   let correctedEventId: string | null = null
@@ -123,6 +129,8 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
             source: 'admin-correction',
             correctedById: admin.id,
             correctionReason: `Approved correction request ${req_.id}`,
+            // Multi-tenancy: scope the corrected event to the admin's business.
+            businessId: admin.businessId,
           },
         })
         correctedEventId = event.id

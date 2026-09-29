@@ -29,6 +29,12 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   const user = await db.user.findUnique({ where: { id }, include: { role: true } })
   if (!user) return NextResponse.json({ error: 'Not found.' }, { status: 404 })
 
+  // Multi-tenancy: prevent cross-business data access. Return 404 (not 403)
+  // so we don't leak the existence of resources in other businesses.
+  if (user.businessId !== admin.businessId) {
+    return NextResponse.json({ error: 'Not found.' }, { status: 404 })
+  }
+
   // Cannot deactivate your own admin account (locks the only admin out).
   if (id === admin.id) {
     return NextResponse.json(

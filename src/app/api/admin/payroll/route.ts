@@ -21,8 +21,8 @@ import { computeDaySummary, getHourlyRateAt } from '@/lib/attendance/engine'
 import { boundedDateRange } from '@/lib/http'
 
 export async function GET(req: Request) {
-  const user = await requireAdminApi()
-  if (user instanceof Response) return user
+  const admin = await requireAdminApi()
+  if (admin instanceof Response) return admin
 
   const url = new URL(req.url)
   const range = boundedDateRange(
@@ -39,7 +39,7 @@ export async function GET(req: Request) {
   if (!agentRole) return NextResponse.json({ rows: [], totalNetHours: 0, totalBreakHours: 0, totalEarningsCents: 0 })
 
   const users = await db.user.findMany({
-    where: { roleId: agentRole.id },
+    where: { roleId: agentRole.id, businessId: admin.businessId },
     orderBy: { name: 'asc' },
   })
 
@@ -60,7 +60,7 @@ export async function GET(req: Request) {
 
   for (const u of users) {
     const events = await db.attendanceEvent.findMany({
-      where: { userId: u.id, businessDate: { in: keys } },
+      where: { userId: u.id, businessDate: { in: keys }, businessId: admin.businessId },
       orderBy: { timestampUtc: 'asc' },
     })
     if (events.length === 0) continue
@@ -96,7 +96,7 @@ export async function GET(req: Request) {
     if (empNetHours === 0) continue
 
     rows.push({
-      employeeId: u.employeeId,
+      employeeId: u.employeeId ?? "",
       name: u.name,
       username: u.username,
       netHours: Math.round(empNetHours * 10_000) / 10_000,

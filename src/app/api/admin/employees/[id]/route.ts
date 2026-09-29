@@ -35,6 +35,12 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
   })
   if (!u) return NextResponse.json({ error: 'Not found.' }, { status: 404 })
 
+  // Multi-tenancy: prevent cross-business data access. Return 404 (not 403)
+  // so we don't leak the existence of resources in other businesses.
+  if (u.businessId !== admin.businessId) {
+    return NextResponse.json({ error: 'Not found.' }, { status: 404 })
+  }
+
   // Don't expose password hash. Don't expose admins through this endpoint.
   if (u.role.name === 'ADMIN') {
     return NextResponse.json({ error: 'Not found.' }, { status: 404 })
@@ -123,6 +129,12 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
 
   const existing = await db.user.findUnique({ where: { id } })
   if (!existing) return NextResponse.json({ error: 'Not found.' }, { status: 404 })
+
+  // Multi-tenancy: prevent cross-business data access. Return 404 (not 403)
+  // so we don't leak the existence of resources in other businesses.
+  if (existing.businessId !== admin.businessId) {
+    return NextResponse.json({ error: 'Not found.' }, { status: 404 })
+  }
 
   // Protected accounts cannot be edited by admins.
   if (existing.isProtected) {

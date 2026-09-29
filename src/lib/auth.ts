@@ -1,13 +1,9 @@
 /**
  * NextAuth configuration (Credentials provider, JWT strategy).
  *
- * Design choices:
- *  - JWT strategy (not DB sessions) so it works on Vercel serverless.
- *  - The session token never carries the password hash. It only carries:
- *    userId, role, mustChangePassword, name, email, username.
- *  - On every request, middleware + route guards check role server-side.
- *  - "mustChangePassword" is propagated into the JWT so middleware can force
- *    the password-change route without hitting the DB on every page nav.
+ * Clock-Now multi-tenant: the JWT carries userId, role, businessId,
+ * and mustChangePassword. The businessId is used to scope all admin
+ * queries so an admin can never see another business's data.
  */
 
 import type { NextAuthOptions } from 'next-auth'
@@ -16,7 +12,6 @@ import bcrypt from 'bcryptjs'
 import { db } from '@/lib/db'
 
 export const authOptions: NextAuthOptions = {
-  // JWT strategy works on Vercel serverless without external session stores.
   session: { strategy: 'jwt', maxAge: 60 * 60 * 12 }, // 12h
   jwt: { maxAge: 60 * 60 * 12 },
   pages: {
@@ -38,7 +33,7 @@ export const authOptions: NextAuthOptions = {
           where: {
             OR: [{ email: identifier }, { username: identifier }],
           },
-          include: { role: true },
+          include: { role: true, business: true },
         })
 
         if (!user) return null
@@ -54,6 +49,8 @@ export const authOptions: NextAuthOptions = {
           role: user.role.name,
           username: user.username,
           employeeId: user.employeeId,
+          businessId: user.businessId,
+          businessName: user.business?.name ?? null,
           mustChangePassword: user.mustChangePassword,
         } as any
       },
@@ -61,18 +58,17 @@ export const authOptions: NextAuthOptions = {
   ],
   callbacks: {
     async jwt({ token, user, trigger, session }) {
-      // Initial sign-in
       if (user) {
         const u = user as any
         token.userId = u.id
         token.role = u.role
         token.username = u.username
         token.employeeId = u.employeeId
+        token.businessId = u.businessId
+        token.businessName = u.businessName
         token.mustChangePassword = u.mustChangePassword
       }
 
-      // Allow client-initiated session update (after password change).
-      // Only honor mustChangePassword from session update — never role/userId.
       if (trigger === 'update' && session) {
         if (typeof session.mustChangePassword === 'boolean') {
           token.mustChangePassword = session.mustChangePassword
@@ -87,12 +83,13 @@ export const authOptions: NextAuthOptions = {
         ;(session.user as any).role = token.role as string
         ;(session.user as any).username = token.username as string
         ;(session.user as any).employeeId = token.employeeId as string
+        ;(session.user as any).businessId = token.businessId as string | null
+        ;(session.user as any).businessName = token.businessName as string | null
         ;(session.user as any).mustChangePassword = token.mustChangePassword as boolean
       }
       return session
     },
   },
-  // AUTH_SECRET is read automatically from env.
   secret: process.env.AUTH_SECRET,
 }
 
@@ -102,8 +99,10 @@ export type AppSession = {
     name: string
     email: string
     username: string
-    employeeId: string
-    role: 'ADMIN' | 'SURVEY_AGENT'
+    employeeId: string | null
+    role: 'SUPER_ADMIN' | 'ADMIN' | 'SURVEY_AGENT'
+    businessId: string | null
+    businessName: string | null
     mustChangePassword: boolean
   }
 }

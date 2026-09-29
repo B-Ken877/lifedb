@@ -11,15 +11,18 @@ import { db } from '@/lib/db'
 import { parseLimit } from '@/lib/http'
 
 export async function GET(req: Request) {
-  const user = await requireAdminApi()
-  if (user instanceof Response) return user
+  const admin = await requireAdminApi()
+  if (admin instanceof Response) return admin
 
   const url = new URL(req.url)
   const status = url.searchParams.get('status') || undefined
   const limit = parseLimit(url.searchParams.get('limit'), { default: 100, max: 200 })
 
   const requests = await db.correctionRequest.findMany({
-    where: status ? { status } : undefined,
+    where: {
+      businessId: admin.businessId,
+      ...(status ? { status } : {}),
+    },
     orderBy: { createdAt: 'desc' },
     take: limit,
     include: {
