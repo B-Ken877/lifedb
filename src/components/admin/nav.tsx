@@ -20,7 +20,6 @@ import {
   FileEdit,
   DollarSign,
   BarChart3,
-  ShieldCheck,
   Settings,
   LogOut,
   Menu,
@@ -34,7 +33,6 @@ const NAV = [
   { href: '/admin/corrections', label: 'Corrections', icon: FileEdit },
   { href: '/admin/payroll', label: 'Payroll', icon: DollarSign },
   { href: '/admin/reports', label: 'Reports', icon: BarChart3 },
-  { href: '/admin/audit', label: 'Audit Log', icon: ShieldCheck },
   { href: '/admin/settings', label: 'Settings', icon: Settings },
 ]
 
