@@ -34,8 +34,7 @@ export default withAuth(
         const isPublic =
           path === '/connexion' ||
           path.startsWith('/api/auth/') ||
-          path === '/changer-mot-de-passe' ||
-          path === '/api/debug-env'
+          path === '/changer-mot-de-passe'
         if (isPublic) return true
         return !!token
       },
