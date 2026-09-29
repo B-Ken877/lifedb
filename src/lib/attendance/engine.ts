@@ -142,11 +142,18 @@ export interface RecordEventResult {
  * — the second one waits for the first to commit, re-reads the ledger, and
  * correctly sees WORKING → returns ALREADY_WORKING instead of creating a
  * duplicate event.
+ *
+ * TIME SOURCE: The timestamp is ALWAYS `new Date()` — i.e. the server's
+ * clock at the moment the transaction runs. The caller CANNOT override
+ * this (the `at` parameter was removed deliberately). This guarantees
+ * that no client can ever backdate or postdate an attendance event.
+ * The businessDate is derived from the same server timestamp via
+ * businessDateKey() so it's consistent with the UTC instant.
  */
 export async function recordEvent(
   userId: string,
   action: EventType,
-  opts?: { source?: string; note?: string; at?: Date; businessId?: string | null }
+  opts?: { source?: string; note?: string; businessId?: string | null }
 ): Promise<RecordEventResult> {
   return db.$transaction(async (tx) => {
     // Lock the user row so concurrent recordEvent calls for the same user
@@ -163,7 +170,8 @@ export async function recordEvent(
     const err = validateTransition(current, action)
     if (err) return { ok: false, error: err }
 
-    const now = opts?.at ?? new Date()
+    // Server timestamp — NEVER trust a client-supplied timestamp.
+    const now = new Date()
     const event = await tx.attendanceEvent.create({
       data: {
         userId,

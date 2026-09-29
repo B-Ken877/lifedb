@@ -20,7 +20,8 @@ import { notifyRealtime } from '@/lib/realtime-server'
 
 const Body = z.object({
   action: z.enum(['CLOCK_IN', 'CLOCK_OUT', 'BREAK_START', 'BREAK_END']),
-})
+}).strict()  // reject any extra fields (timestamp, at, etc.) — the server
+             // generates the timestamp, NEVER the client.
 
 export async function POST(req: Request) {
   const user = await requireAgentApi()
