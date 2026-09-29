@@ -37,6 +37,7 @@ interface Employee {
   employeeId: string
   username: string
   email: string
+  project: string | null
   active: boolean
   mustChangePassword: boolean
   isProtected: boolean
@@ -139,7 +140,7 @@ export default function AdminEmployeesPage() {
                   <tr className="text-left">
                     <th className="px-3 py-2 font-medium">Name</th>
                     <th className="px-3 py-2 font-medium">Employee ID</th>
-                    <th className="px-3 py-2 font-medium">Username</th>
+                    <th className="px-3 py-2 font-medium">Project</th>
                     <th className="px-3 py-2 font-medium text-right">Rate</th>
                     <th className="px-3 py-2 font-medium">Account</th>
                     <th className="px-3 py-2 font-medium">Status</th>
@@ -159,7 +160,11 @@ export default function AdminEmployeesPage() {
                           {e.employeeId}
                         </Link>
                       </td>
-                      <td className="px-3 py-2">{e.username}</td>
+                      <td className="px-3 py-2">
+                        <Link href={`/admin/employees/${e.id}`} className="block">
+                          {e.project || <span className="text-muted-foreground/50">—</span>}
+                        </Link>
+                      </td>
                       <td className="px-3 py-2 text-right">${e.hourlyRate.toFixed(2)}</td>
                       <td className="px-3 py-2">
                         <Badge variant="outline" className={STATE_BADGE[String(!e.active)]}>
@@ -195,6 +200,7 @@ function AddAgentForm({ onCreated, refreshEmployeesSilently }: { onCreated: () =
   const [employeeId, setEmployeeId] = useState('')
   const [username, setUsername] = useState('')
   const [email, setEmail] = useState('')
+  const [project, setProject] = useState('')
   const [hourlyRate, setHourlyRate] = useState('5.00')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -214,6 +220,7 @@ function AddAgentForm({ onCreated, refreshEmployeesSilently }: { onCreated: () =
           employeeId,
           username,
           email,
+          project: project.trim() || undefined,
           hourlyRate: parseFloat(hourlyRate),
           active: true,
         }),
@@ -294,6 +301,7 @@ function AddAgentForm({ onCreated, refreshEmployeesSilently }: { onCreated: () =
             setEmployeeId('')
             setUsername('')
             setEmail('')
+            setProject('')
             setHourlyRate('5.00')
             onCreated()
           }}>Done</Button>
@@ -331,6 +339,17 @@ function AddAgentForm({ onCreated, refreshEmployeesSilently }: { onCreated: () =
         <div className="space-y-2">
           <Label htmlFor="email">Email</Label>
           <Input id="email" type="email" required value={email} onChange={(e) => setEmail(e.target.value)} disabled={busy} />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="project">Project</Label>
+          <Input
+            id="project"
+            value={project}
+            onChange={(e) => setProject(e.target.value)}
+            disabled={busy}
+            placeholder="e.g. Downtown Survey, North Zone, Client ABC"
+          />
+          <p className="text-xs text-muted-foreground">Optional. Free-text — type the project name the agent is assigned to.</p>
         </div>
         <div className="space-y-2">
           <Label htmlFor="rate">Hourly rate (USD)</Label>

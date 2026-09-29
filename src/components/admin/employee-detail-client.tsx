@@ -37,6 +37,7 @@ export interface EmployeeDetailData {
     employeeId: string
     username: string
     email: string
+    project: string | null
     active: boolean
     mustChangePassword: boolean
     role: string
@@ -119,6 +120,7 @@ export function EmployeeDetailClient({
     employeeId: string
     username: string
     email: string
+    project: string | null
     active: boolean
     mustChangePassword: boolean
     isProtected: boolean
@@ -228,6 +230,7 @@ export function EmployeeDetailClient({
               </CardHeader>
               <CardContent className="grid gap-4 sm:grid-cols-3">
                 <Info label="Hourly rate" value={`$${data.employee.currentRate.toFixed(2)}/hr`} />
+                <Info label="Project" value={data.employee.project || '—'} />
                 <Info label="Created" value={fmtTime(data.employee.createdAt)} />
                 <Info label="Pending corrections" value={String(data.pendingCorrectionsCount)} />
               </CardContent>
@@ -362,6 +365,7 @@ function EditEmployeeDialog({
   const [email, setEmail] = useState(initial.email)
   const [employeeIdVal, setEmployeeIdVal] = useState(initial.employeeId)
   const [username, setUsername] = useState(initial.username)
+  const [project, setProject] = useState(initial.project ?? '')
   const [busy, setBusy] = useState(false)
 
   const submit = async (e: React.FormEvent) => {
@@ -371,7 +375,7 @@ function EditEmployeeDialog({
       const res = await fetch(`/api/admin/employees/${employeeId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, email, employeeId: employeeIdVal, username }),
+        body: JSON.stringify({ name, email, employeeId: employeeIdVal, username, project: project.trim() || null }),
       })
       const j = await res.json()
       if (!res.ok) {
@@ -414,6 +418,15 @@ function EditEmployeeDialog({
           <div className="space-y-2">
             <Label>Email</Label>
             <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
+          </div>
+          <div className="space-y-2">
+            <Label>Project</Label>
+            <Input
+              value={project}
+              onChange={(e) => setProject(e.target.value)}
+              placeholder="e.g. Downtown Survey, North Zone"
+            />
+            <p className="text-xs text-muted-foreground">Free-text. Leave empty to clear.</p>
           </div>
           <DialogFooter>
             <Button type="submit" disabled={busy}>

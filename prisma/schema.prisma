@@ -73,6 +73,11 @@ model User {
   // password-reset by anyone except a SUPER_ADMIN. Used for the platform
   // owner's super admin account.
   isProtected        Boolean  @default(false)
+  // Free-text project assignment — the admin types this manually when
+  // creating or editing an agent. Open input (not a dropdown) so the
+  // admin can use whatever project naming convention they want.
+  // e.g., "Downtown Survey", "North Zone", "Client ABC"
+  project            String?
   roleId             String
   role               Role     @relation(fields: [roleId], references: [id])
   // Multi-tenancy: which business does this user belong to?

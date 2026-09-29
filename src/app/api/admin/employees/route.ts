@@ -27,6 +27,7 @@ const Body = z.object({
   username: z.string().min(3, 'Username is required.').max(40),
   email: z.string().email('Valid email is required.'),
   hourlyRate: z.number().min(0, 'Hourly rate must be positive.'),
+  project: z.string().max(200).optional(),
   active: z.boolean().default(true),
 })
 
@@ -50,6 +51,7 @@ export async function GET() {
       employeeId: u.employeeId,
       username: u.username,
       email: u.email,
+      project: u.project,
       active: u.active,
       mustChangePassword: u.mustChangePassword,
       isProtected: u.isProtected,
@@ -112,6 +114,7 @@ export async function POST(req: Request) {
       passwordHash,
       mustChangePassword: true,
       active: parsed.active,
+      project: parsed.project?.trim() || null,
       // Admin-created accounts are never protected. Only the seed can create
       // protected accounts (the project owner's personal account).
       isProtected: false,
@@ -142,6 +145,7 @@ export async function POST(req: Request) {
       employeeId: created.employeeId,
       username: created.username,
       hourlyRate: parsed.hourlyRate,
+      project: parsed.project || null,
     },
   })
 
@@ -160,6 +164,7 @@ export async function POST(req: Request) {
       employeeId: created.employeeId,
       username: created.username,
       email: created.email,
+      project: created.project,
     },
     temporaryPassword: tempPassword,
   })

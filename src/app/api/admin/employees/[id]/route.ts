@@ -22,6 +22,7 @@ const PatchBody = z.object({
   email: z.string().email().optional(),
   employeeId: z.string().min(2).optional(),
   username: z.string().min(3).max(40).optional(),
+  project: z.string().max(200).nullable().optional(),
 })
 
 export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
@@ -87,6 +88,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
       employeeId: u.employeeId,
       username: u.username,
       email: u.email,
+      project: u.project,
       active: u.active,
       mustChangePassword: u.mustChangePassword,
       isProtected: u.isProtected,
@@ -172,6 +174,8 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   if (parsed.email) data.email = parsed.email.toLowerCase()
   if (parsed.username) data.username = parsed.username.toLowerCase()
   if (parsed.employeeId) data.employeeId = parsed.employeeId
+  // project can be set to null (clear it) or a string (update it)
+  if (parsed.project !== undefined) data.project = parsed.project?.trim() || null
 
   const updated = await db.user.update({ where: { id }, data })
 

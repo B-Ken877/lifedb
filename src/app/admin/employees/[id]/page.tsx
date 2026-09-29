@@ -33,6 +33,7 @@ export default async function EmployeeDetailPage({
     employeeId: u.employeeId ?? "",
     username: u.username,
     email: u.email,
+    project: u.project,
     active: u.active,
     mustChangePassword: u.mustChangePassword,
     isProtected: u.isProtected,
