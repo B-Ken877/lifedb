@@ -40,6 +40,7 @@ import {
   ResponsiveContainer,
 } from 'recharts'
 import { cn } from '@/lib/utils'
+import { formatHours } from '@/lib/format'
 
 type AgentState = 'OFFLINE' | 'WORKING' | 'ON_BREAK'
 type EventType = 'CLOCK_IN' | 'CLOCK_OUT' | 'BREAK_START' | 'BREAK_END'
@@ -67,10 +68,6 @@ interface InitialData {
   monthTotalEarningsCents: number
   hoursByDay7: { dateKey: string; label: string; netHours: number; earningsCents: number }[]
   todayDate: string
-}
-
-function formatHours(h: number): string {
-  return `${h.toFixed(2)}h`
 }
 
 function formatCents(cents: number): string {
@@ -387,7 +384,7 @@ export function AgentDashboardClient({ initial }: { initial: InitialData }) {
                   // parameter; cast through unknown to keep our hook ergonomic.
                   formatter={((value: number, _name: unknown, props: any) => {
                     const cents = props?.payload?.earningsCents ?? 0
-                    return [`${value.toFixed(2)}h · ${formatCents(cents)}`, 'Hours']
+                    return [`${formatHours(value)} · ${formatCents(cents)}`, 'Hours']
                   }) as any}
                   labelFormatter={(label: any, payload: any) => {
                     const dateKey = payload?.[0]?.payload?.dateKey

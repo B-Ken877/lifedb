@@ -14,6 +14,7 @@ import { db } from '@/lib/db'
 import { buildCSV, csvResponse, csvTime } from '@/lib/csv'
 import { computeDaySummary, getHourlyRateAt } from '@/lib/attendance/engine'
 import { boundedDateRange } from '@/lib/http'
+import { formatHours } from '@/lib/format'
 
 export async function GET(req: Request) {
   const user = await requireAgentApi()
@@ -57,8 +58,8 @@ export async function GET(req: Request) {
       key,
       csvTime(summary.clockInUtc),
       csvTime(summary.clockOutUtc),
-      `${summary.breakHours.toFixed(2)}h`,
-      summary.netHours.toFixed(2),
+      formatHours(summary.breakHours),
+      formatHours(summary.netHours),
       `$${rate.toFixed(2)}`,
       `$${(summary.earningsCents / 100).toFixed(2)}`,
     ])

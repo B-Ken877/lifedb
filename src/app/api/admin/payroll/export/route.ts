@@ -13,6 +13,7 @@ import { db } from '@/lib/db'
 import { buildCSV, csvResponse } from '@/lib/csv'
 import { computeDaySummary, getHourlyRateAt } from '@/lib/attendance/engine'
 import { boundedDateRange } from '@/lib/http'
+import { formatHours } from '@/lib/format'
 
 export async function GET(req: Request) {
   const admin = await requireAdminApi()
@@ -62,7 +63,7 @@ export async function GET(req: Request) {
         u.employeeId ?? "",
         u.name,
         key,
-        summary.netHours.toFixed(2),
+        formatHours(summary.netHours),
         `$${rate.toFixed(2)}`,
         `$${(summary.earningsCents / 100).toFixed(2)}`,
       ])

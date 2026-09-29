@@ -16,6 +16,7 @@ import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Download, Loader2, ArrowLeft } from 'lucide-react'
 import { toast } from 'sonner'
+import { formatHours } from '@/lib/format'
 
 interface DaySummary {
   businessDate: string
@@ -153,8 +154,8 @@ export default function AgentAttendancePage() {
                         <td className="px-4 py-3">{formatDateKey(d.businessDate)}</td>
                         <td className="px-4 py-3">{formatTime(d.clockInUtc)}</td>
                         <td className="px-4 py-3">{formatTime(d.clockOutUtc)}</td>
-                        <td className="px-4 py-3 text-right">{d.breakHours.toFixed(2)}h</td>
-                        <td className="px-4 py-3 text-right font-medium">{d.netHours.toFixed(2)}h</td>
+                        <td className="px-4 py-3 text-right">{formatHours(d.breakHours)}</td>
+                        <td className="px-4 py-3 text-right font-medium">{formatHours(d.netHours)}</td>
                         <td className="px-4 py-3 text-right">${d.hourlyRate.toFixed(2)}</td>
                         <td className="px-4 py-3 text-right">${(d.earningsCents / 100).toFixed(2)}</td>
                         <td className="px-4 py-3">

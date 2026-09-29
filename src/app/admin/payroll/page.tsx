@@ -15,6 +15,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Download, Loader2 } from 'lucide-react'
+import { formatHours } from '@/lib/format'
 
 interface Row {
   employeeId: string
@@ -103,7 +104,7 @@ export default function AdminPayrollPage() {
         <CardHeader>
           <CardTitle className="text-base">Per-employee summary</CardTitle>
           <CardDescription>
-            {data ? `Total: ${data.totalNetHours.toFixed(2)}h · $${(data.totalEarningsCents / 100).toFixed(2)}` : '—'}
+            {data ? `Total: ${formatHours(data.totalNetHours)} · $${(data.totalEarningsCents / 100).toFixed(2)}` : '—'}
           </CardDescription>
         </CardHeader>
         <CardContent className="p-0">
@@ -133,8 +134,8 @@ export default function AdminPayrollPage() {
                       <td className="px-3 py-2 font-medium">{r.name}</td>
                       <td className="px-3 py-2">{r.employeeId}</td>
                       <td className="px-3 py-2 text-right">{r.days}</td>
-                      <td className="px-3 py-2 text-right">{r.breakHours.toFixed(2)}h</td>
-                      <td className="px-3 py-2 text-right font-medium">{r.netHours.toFixed(2)}h</td>
+                      <td className="px-3 py-2 text-right">{formatHours(r.breakHours)}</td>
+                      <td className="px-3 py-2 text-right font-medium">{formatHours(r.netHours)}</td>
                       <td className="px-3 py-2 text-right">${r.rate.toFixed(2)}</td>
                       <td className="px-3 py-2 text-right font-medium">${(r.earningsCents / 100).toFixed(2)}</td>
                     </tr>
@@ -144,8 +145,8 @@ export default function AdminPayrollPage() {
                   <tfoot className="bg-muted/30 font-semibold">
                     <tr>
                       <td colSpan={3} className="px-3 py-2">TOTAL</td>
-                      <td className="px-3 py-2 text-right">{data.totalBreakHours.toFixed(2)}h</td>
-                      <td className="px-3 py-2 text-right">{data.totalNetHours.toFixed(2)}h</td>
+                      <td className="px-3 py-2 text-right">{formatHours(data.totalBreakHours)}</td>
+                      <td className="px-3 py-2 text-right">{formatHours(data.totalNetHours)}</td>
                       <td></td>
                       <td className="px-3 py-2 text-right">${(data.totalEarningsCents / 100).toFixed(2)}</td>
                     </tr>

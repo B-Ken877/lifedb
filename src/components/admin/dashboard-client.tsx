@@ -17,6 +17,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { useRealtimeAdmin } from '@/lib/realtime-client'
 import { Loader2, Wifi, WifiOff, Users, Coffee, UserX, Clock, DollarSign, Activity } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { formatHours } from '@/lib/format'
 
 interface EmployeeRow {
   id: string
@@ -66,7 +67,7 @@ function fmtMoney(cents: number) {
 }
 
 function fmtHours(h: number) {
-  return `${h.toFixed(1)}h`
+  return formatHours(h)
 }
 
 const STATE_BADGE: Record<string, string> = {
@@ -203,7 +204,7 @@ export function AdminDashboardClient({ initial }: { initial: DashboardData }) {
                       </td>
                       <td className="px-3 py-2 text-right">
                         <Link href={`/admin/employees/${r.id}`} className="block">
-                          {r.todayNetHours.toFixed(2)}h
+                          {fmtHours(r.todayNetHours)}
                         </Link>
                       </td>
                       <td className="px-3 py-2 text-right">

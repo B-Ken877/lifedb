@@ -16,6 +16,7 @@ import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Download, Loader2 } from 'lucide-react'
+import { formatHours } from '@/lib/format'
 
 interface Row {
   id: string
@@ -112,7 +113,7 @@ export default function AdminAttendancePage() {
         <CardHeader>
           <CardTitle className="text-base">Today — all agents</CardTitle>
           <CardDescription>
-            {stats ? `${stats.workingCount} working · ${stats.onBreakCount} on break · ${stats.offlineCount} offline · ${stats.todayTotalNetHours.toFixed(1)}h total · $${(stats.todayEstimatedPayrollCents / 100).toFixed(2)}` : '—'}
+            {stats ? `${stats.workingCount} working · ${stats.onBreakCount} on break · ${stats.offlineCount} offline · ${formatHours(stats.todayTotalNetHours)} total · $${(stats.todayEstimatedPayrollCents / 100).toFixed(2)}` : '—'}
           </CardDescription>
         </CardHeader>
         <CardContent className="p-0">
@@ -149,8 +150,8 @@ export default function AdminAttendancePage() {
                       </td>
                       <td className="px-3 py-2">{fmtTime(r.todayClockInUtc)}</td>
                       <td className="px-3 py-2">{fmtTime(r.todayClockOutUtc)}</td>
-                      <td className="px-3 py-2 text-right">{r.todayBreakHours.toFixed(2)}h</td>
-                      <td className="px-3 py-2 text-right font-medium">{r.todayNetHours.toFixed(2)}h</td>
+                      <td className="px-3 py-2 text-right">{formatHours(r.todayBreakHours)}</td>
+                      <td className="px-3 py-2 text-right font-medium">{formatHours(r.todayNetHours)}</td>
                       <td className="px-3 py-2 text-right">${(r.todayEarningsCents / 100).toFixed(2)}</td>
                     </tr>
                   ))}

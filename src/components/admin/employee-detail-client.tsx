@@ -28,6 +28,7 @@ import {
 } from 'lucide-react'
 import Link from 'next/link'
 import { toast } from 'sonner'
+import { formatHours } from '@/lib/format'
 
 export interface EmployeeDetailData {
   employee: {
@@ -265,8 +266,8 @@ export function EmployeeDetailClient({
                         <td className="px-3 py-2">{fmtDateKey(d.businessDate)}</td>
                         <td className="px-3 py-2">{fmtTimeOnly(d.clockInUtc)}</td>
                         <td className="px-3 py-2">{fmtTimeOnly(d.clockOutUtc)}</td>
-                        <td className="px-3 py-2 text-right">{d.breakHours.toFixed(2)}h</td>
-                        <td className="px-3 py-2 text-right font-medium">{d.netHours.toFixed(2)}h</td>
+                        <td className="px-3 py-2 text-right">{formatHours(d.breakHours)}</td>
+                        <td className="px-3 py-2 text-right font-medium">{formatHours(d.netHours)}</td>
                         <td className="px-3 py-2 text-right">${d.hourlyRate.toFixed(2)}</td>
                         <td className="px-3 py-2 text-right">${(d.earningsCents / 100).toFixed(2)}</td>
                         <td className="px-3 py-2">
