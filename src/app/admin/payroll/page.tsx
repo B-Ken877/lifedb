@@ -95,7 +95,7 @@ export default function AdminPayrollPage() {
               window.location.href = `/api/admin/payroll/export?from=${range.from}&to=${range.to}`
             }}
           >
-            <Download className="h-4 w-4 mr-2" /> Export CSV
+            <Download className="h-4 w-4 mr-2" /> <span className="hidden sm:inline">Export CSV</span><span className="sm:hidden">Export</span>
           </Button>
         </CardContent>
       </Card>
@@ -115,7 +115,7 @@ export default function AdminPayrollPage() {
           ) : !data || data.rows.length === 0 ? (
             <div className="p-8 text-center text-sm text-muted-foreground">No attendance in the selected range.</div>
           ) : (
-            <div className="overflow-x-auto">
+            <div className="overflow-x-auto scrollbar-thin sticky-col-table">
               <table className="w-full text-sm">
                 <thead className="bg-muted/40 text-muted-foreground">
                   <tr className="text-left">

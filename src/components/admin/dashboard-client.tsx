@@ -164,7 +164,7 @@ export function AdminDashboardClient({ initial }: { initial: DashboardData }) {
             </CardDescription>
           </CardHeader>
           <CardContent className="p-0">
-            <div className="overflow-x-auto max-h-[600px] overflow-y-auto">
+            <div className="overflow-x-auto max-h-[60vh] sm:max-h-[600px] overflow-y-auto">
               <table className="w-full text-sm">
                 <thead className="bg-muted/40 text-muted-foreground sticky top-0">
                   <tr className="text-left">
@@ -241,7 +241,7 @@ export function AdminDashboardClient({ initial }: { initial: DashboardData }) {
             <CardDescription>Latest attendance events.</CardDescription>
           </CardHeader>
           <CardContent className="p-0">
-            <div className="divide-y max-h-[600px] overflow-y-auto">
+            <div className="divide-y max-h-[60vh] sm:max-h-[600px] overflow-y-auto">
               {data.recentActivity.map((a) => (
                 <div key={a.id} className="p-3 hover:bg-muted/30">
                   <p className="text-sm">

@@ -81,7 +81,7 @@ export default function AdminAttendancePage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Attendance</h1>
           <p className="text-sm text-muted-foreground">Company-wide attendance for today.</p>
@@ -89,7 +89,7 @@ export default function AdminAttendancePage() {
         <Button variant="outline" onClick={() => {
           window.location.href = `/api/admin/attendance/export?from=${range.from}&to=${range.to}`
         }}>
-          <Download className="h-4 w-4 mr-2" /> Export CSV
+          <Download className="h-4 w-4 mr-2" /> <span className="hidden sm:inline">Export CSV</span><span className="sm:hidden">Export</span>
         </Button>
       </div>
 
@@ -124,7 +124,7 @@ export default function AdminAttendancePage() {
           ) : stats.rows.length === 0 ? (
             <div className="p-8 text-center text-sm text-muted-foreground">No employees.</div>
           ) : (
-            <div className="overflow-x-auto">
+            <div className="overflow-x-auto scrollbar-thin sticky-col-table">
               <table className="w-full text-sm">
                 <thead className="bg-muted/40 text-muted-foreground">
                   <tr className="text-left">

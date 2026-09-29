@@ -133,7 +133,7 @@ export default function AdminEmployeesPage() {
                 : 'No employees match your search.'}
             </div>
           ) : (
-            <div className="overflow-x-auto">
+            <div className="overflow-x-auto scrollbar-thin sticky-col-table">
               <table className="w-full text-sm">
                 <thead className="bg-muted/40 text-muted-foreground">
                   <tr className="text-left">

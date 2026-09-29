@@ -13,8 +13,10 @@ export default async function AgentLayout({ children }: React.PropsWithChildren)
   return (
     <div className="min-h-screen flex flex-col">
       <AgentNav userName={user.name} />
-      <main className="flex-1 px-4 lg:px-6 py-6 max-w-7xl w-full mx-auto">{children}</main>
-      <footer className="border-t mt-auto">
+      <main className="flex-1 px-4 lg:px-6 py-6 max-w-7xl w-full mx-auto pb-24 lg:pb-6">
+        {children}
+      </main>
+      <footer className="border-t mt-auto hidden lg:block">
         <div className="px-4 lg:px-6 py-3 text-xs text-muted-foreground">
           Clock-Now · Internal use only
         </div>

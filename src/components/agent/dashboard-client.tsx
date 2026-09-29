@@ -186,12 +186,12 @@ export function AgentDashboardClient({ initial }: { initial: InitialData }) {
       {/* Status + clock actions */}
       <Card className="overflow-hidden">
         <CardHeader className="pb-4">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <div className="flex flex-col gap-3">
             <div>
               <CardTitle className="text-base font-medium text-muted-foreground">
                 Current status
               </CardTitle>
-              <div className="mt-2 flex items-center gap-3">
+              <div className="mt-2 flex items-center gap-3 flex-wrap">
                 <span
                   className={cn(
                     'inline-flex items-center rounded-full px-3 py-1 text-sm font-semibold tracking-wide',
@@ -204,7 +204,7 @@ export function AgentDashboardClient({ initial }: { initial: InitialData }) {
                 <span className="text-sm text-muted-foreground">{stateMeta.description}</span>
               </div>
             </div>
-            <div className="text-right text-xs text-muted-foreground">
+            <div className="text-xs text-muted-foreground flex flex-wrap gap-x-4 gap-y-1">
               {today.clockInUtc && (
                 <div>
                   Clock in: <span className="text-foreground font-medium">{formatTime(today.clockInUtc)}</span>
@@ -220,13 +220,14 @@ export function AgentDashboardClient({ initial }: { initial: InitialData }) {
           </div>
         </CardHeader>
         <CardContent>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {/* Mobile: 2x2 grid with large buttons; Desktop: 4 columns */}
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <ActionButton
               action="CLOCK_IN"
               disabled={state !== 'OFFLINE' || busy !== null}
               busy={busy === 'CLOCK_IN'}
               onClick={() => doAction('CLOCK_IN')}
-              icon={<PlayCircle className="h-6 w-6" />}
+              icon={<PlayCircle className="h-7 w-7" />}
               label="Clock In"
               tone="primary"
               large={primaryAction === 'CLOCK_IN'}
@@ -236,7 +237,7 @@ export function AgentDashboardClient({ initial }: { initial: InitialData }) {
               disabled={state !== 'WORKING' || busy !== null}
               busy={busy === 'BREAK_START'}
               onClick={() => doAction('BREAK_START')}
-              icon={<Coffee className="h-6 w-6" />}
+              icon={<Coffee className="h-7 w-7" />}
               label="Start Break"
               tone="warning"
               large={primaryAction === 'BREAK_START'}
@@ -246,7 +247,7 @@ export function AgentDashboardClient({ initial }: { initial: InitialData }) {
               disabled={state !== 'ON_BREAK' || busy !== null}
               busy={busy === 'BREAK_END'}
               onClick={() => doAction('BREAK_END')}
-              icon={<Play className="h-6 w-6" />}
+              icon={<Play className="h-7 w-7" />}
               label="End Break"
               tone="success"
               large={primaryAction === 'BREAK_END'}
@@ -256,7 +257,7 @@ export function AgentDashboardClient({ initial }: { initial: InitialData }) {
               disabled={state === 'OFFLINE' || busy !== null}
               busy={busy === 'CLOCK_OUT'}
               onClick={() => doAction('CLOCK_OUT')}
-              icon={<StopCircle className="h-6 w-6" />}
+              icon={<StopCircle className="h-7 w-7" />}
               label="Clock Out"
               tone="destructive"
               large={primaryAction === 'CLOCK_OUT'}
@@ -343,16 +344,16 @@ export function AgentDashboardClient({ initial }: { initial: InitialData }) {
               <CardTitle className="text-base">Hours by day</CardTitle>
               <CardDescription>Net worked hours over the selected range.</CardDescription>
             </div>
-            <div className="flex items-center gap-1 rounded-md border p-0.5 bg-muted/30">
+            <div className="flex items-center gap-1 rounded-lg border p-1 bg-muted/30">
               {[7, 14, 30].map((d) => (
                 <button
                   key={d}
                   onClick={() => refreshChart(d)}
                   className={cn(
-                    'px-2.5 py-1 text-xs rounded-sm font-medium transition-colors',
+                    'px-3 py-1.5 text-xs rounded-md font-medium transition-colors min-h-[36px]',
                     chartRange === d
                       ? 'bg-background shadow-sm text-foreground'
-                      : 'text-muted-foreground hover:text-foreground'
+                      : 'text-muted-foreground hover:text-foreground active:scale-95'
                   )}
                 >
                   {d}d
@@ -443,15 +444,15 @@ function ActionButton({
       onClick={onClick}
       disabled={disabled}
       className={cn(
-        'flex flex-col items-center justify-center gap-2 rounded-lg border p-4 transition-all',
+        'flex flex-col items-center justify-center gap-2 rounded-xl border p-4 transition-all min-h-[88px] sm:min-h-[100px]',
         large ? 'sm:p-6' : 'sm:p-4',
         disabled
           ? 'bg-muted text-muted-foreground border-border cursor-not-allowed opacity-60'
-          : `${toneClass} border-transparent shadow-sm hover:shadow-md`,
+          : `${toneClass} border-transparent shadow-sm hover:shadow-md active:scale-95`,
         large && !disabled && 'ring-2 ring-offset-2 ring-primary/20'
       )}
     >
-      {busy ? <Loader2 className="h-6 w-6 animate-spin" /> : icon}
+      {busy ? <Loader2 className="h-7 w-7 animate-spin" /> : icon}
       <span className={cn('font-semibold', large ? 'text-base' : 'text-sm')}>{label}</span>
     </button>
   )
@@ -475,7 +476,7 @@ function StatCard({
           <p className="text-xs text-muted-foreground">{title}</p>
           <span className="text-muted-foreground">{icon}</span>
         </div>
-        <p className="mt-2 text-2xl font-semibold">{value}</p>
+        <p className="mt-2 text-xl sm:text-2xl font-semibold tabular-nums">{value}</p>
         {hint && <p className="text-xs text-muted-foreground mt-1">{hint}</p>}
       </CardContent>
     </Card>

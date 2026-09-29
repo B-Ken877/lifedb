@@ -59,17 +59,17 @@ function LoginInner() {
   }
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-muted/40 px-4">
+    <div className="min-h-screen flex flex-col items-center justify-center bg-muted/40 px-4 safe-area-top safe-area-bottom">
       <div className="w-full max-w-md">
         <div className="flex flex-col items-center mb-8">
-          <div className="h-14 w-14 rounded-xl bg-primary flex items-center justify-center mb-3 shadow-sm">
-            <ShieldCheck className="h-7 w-7 text-primary-foreground" />
+          <div className="h-16 w-16 rounded-2xl bg-primary flex items-center justify-center mb-4 shadow-lg shadow-primary/20">
+            <ShieldCheck className="h-8 w-8 text-primary-foreground" />
           </div>
           <h1 className="text-2xl font-semibold tracking-tight">Clock-Now</h1>
           <p className="text-sm text-muted-foreground mt-1">Timekeeping Platform</p>
         </div>
 
-        <Card className="shadow-sm">
+        <Card className="shadow-lg">
           <CardHeader>
             <CardTitle className="text-lg">Sign in</CardTitle>
             <CardDescription>
@@ -91,6 +91,7 @@ function LoginInner() {
                   onChange={(e) => setIdentifier(e.target.value)}
                   disabled={submitting}
                   placeholder="e.g. jdupont or jdupont@lifedreambig.local"
+                  className="h-12 text-base"
                 />
               </div>
               <div className="space-y-2">
@@ -105,30 +106,31 @@ function LoginInner() {
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     disabled={submitting}
-                    className="pr-10"
+                    placeholder="••••••••"
+                    className="h-12 text-base pr-11"
                   />
-                  <LockKeyhole className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <LockKeyhole className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
                 </div>
               </div>
 
               {error && (
                 <div
                   role="alert"
-                  className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive"
+                  className="rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive"
                 >
                   {error}
                 </div>
               )}
 
-              <Button type="submit" className="w-full" disabled={submitting}>
-                {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              <Button type="submit" className="w-full h-12 text-base" disabled={submitting}>
+                {submitting && <Loader2 className="mr-2 h-5 w-5 animate-spin" />}
                 Sign in
               </Button>
             </form>
           </CardContent>
         </Card>
 
-        <p className="mt-6 text-center text-xs text-muted-foreground">
+        <p className="mt-6 text-center text-xs text-muted-foreground px-4">
           Internal use only. Accounts are created by an administrator.
         </p>
       </div>

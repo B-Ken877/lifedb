@@ -118,5 +118,59 @@
   }
   body {
     @apply bg-background text-foreground;
+    /* Prevent iOS Safari from auto-zooming when focusing inputs < 16px */
+    -webkit-text-size-adjust: 100%;
+    /* Remove the gray tap highlight on mobile */
+    -webkit-tap-highlight-color: transparent;
+  }
+  /* Prevent iOS auto-zoom on input focus (must be >= 16px) */
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
+  /* Respect safe areas on notched iPhones (sticky headers, bottom navs) */
+  .safe-area-top {
+    padding-top: env(safe-area-inset-top);
+  }
+  .safe-area-bottom {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  /* Thin scrollbar styling for horizontal-scroll containers (tables, nav) */
+  .scrollbar-thin::-webkit-scrollbar {
+    height: 6px;
+    width: 6px;
+  }
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background: var(--border);
+    border-radius: 3px;
+  }
+  .scrollbar-thin::-webkit-scrollbar-thumb:hover {
+    background: var(--muted-foreground);
+  }
+  /* Hide scrollbar but keep scrollable */
+  .scrollbar-none::-webkit-scrollbar {
+    display: none;
+  }
+  .scrollbar-none {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  /* Sticky first column for wide tables on mobile */
+  .sticky-col-table th:first-child,
+  .sticky-col-table td:first-child {
+    position: sticky;
+    left: 0;
+    background: var(--card);
+    z-index: 1;
+  }
+  .sticky-col-table thead th:first-child {
+    z-index: 2;
+  }
+  .sticky-col-table tbody tr:hover td:first-child {
+    background: var(--muted);
   }
 }

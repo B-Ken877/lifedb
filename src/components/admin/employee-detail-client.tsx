@@ -192,7 +192,7 @@ export function EmployeeDetailClient({
         </div>
       )}
 
-      <div className="flex flex-wrap gap-2">
+      <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-2">
         <EditEmployeeDialog employeeId={employeeId} initial={initial} disabled={initial.isProtected} onDone={refresh} />
         <ResetPasswordDialog employeeId={employeeId} disabled={initial.isProtected} onDone={refresh} />
         <SetRateDialog employeeId={employeeId} currentRate={data?.employee.currentRate ?? 0} disabled={initial.isProtected} onDone={refresh} />
@@ -389,7 +389,7 @@ function EditEmployeeDialog({
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button variant="outline" size="sm" disabled={disabled}>
+        <Button variant="outline" size="sm" className="w-full sm:w-auto h-10" disabled={disabled}>
           <Pencil className="h-4 w-4 mr-2" /> Edit
         </Button>
       </DialogTrigger>
@@ -452,7 +452,7 @@ function ResetPasswordDialog({ employeeId, disabled, onDone }: { employeeId: str
   return (
     <Dialog open={open} onOpenChange={(o) => { setOpen(o); if (!o) setResult(null) }}>
       <DialogTrigger asChild>
-        <Button variant="outline" size="sm" disabled={disabled}>
+        <Button variant="outline" size="sm" className="w-full sm:w-auto h-10" disabled={disabled}>
           <KeyRound className="h-4 w-4 mr-2" /> Reset password
         </Button>
       </DialogTrigger>
@@ -571,7 +571,7 @@ function SetRateDialog({
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button variant="outline" size="sm" disabled={disabled}>
+        <Button variant="outline" size="sm" className="w-full sm:w-auto h-10" disabled={disabled}>
           <DollarSign className="h-4 w-4 mr-2" /> Set rate
         </Button>
       </DialogTrigger>
@@ -730,7 +730,7 @@ function DeleteAgentDialog({
   return (
     <Dialog open={open} onOpenChange={(o) => { setOpen(o); if (!o) setConfirmText('') }}>
       <DialogTrigger asChild>
-        <Button variant="destructive" size="sm" disabled={disabled}>
+        <Button variant="destructive" size="sm" className="w-full sm:w-auto h-10" disabled={disabled}>
           <Trash2 className="h-4 w-4 mr-2" /> Delete agent
         </Button>
       </DialogTrigger>

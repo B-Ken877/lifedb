@@ -106,13 +106,13 @@ export default function AgentAttendancePage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Attendance History</h1>
           <p className="text-sm text-muted-foreground">Your daily attendance records.</p>
         </div>
         <Button onClick={exportCsv} variant="outline">
-          <Download className="h-4 w-4 mr-2" /> Export CSV
+          <Download className="h-4 w-4 mr-2" /> <span className="hidden sm:inline">Export CSV</span><span className="sm:hidden">Export</span>
         </Button>
       </div>
 
@@ -134,7 +134,7 @@ export default function AgentAttendancePage() {
             </div>
           ) : (
             <>
-              <div className="overflow-x-auto">
+              <div className="overflow-x-auto scrollbar-thin sticky-col-table">
                 <table className="w-full text-sm">
                   <thead className="bg-muted/40 text-muted-foreground">
                     <tr className="text-left">
